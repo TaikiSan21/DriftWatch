@@ -11,7 +11,8 @@ source('DriftWatchFunctions.R')
 # Destination folder
 gdriveDest <- '~/DriftWatch/'
 
-cat('------------Script run on', as.character(Sys.time()), '---------------\n')
+cat('------------Script version', thisVersion(), 'run on', as.character(Sys.time()), '---------------\n')
+cat('Directory set to', script.dir, '\n')
 db <- 'SPOTGPS_Logger.sqlite3'
 spotId <- '09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys'
 cat('Updating GPS from API...\n')
@@ -25,7 +26,7 @@ with_drive_quiet({
 
 
 cat('Making individual drift plots...\n')
-doDriftPlots(db, verbose=T)
+doDriftPlots(db, verbose=T, current=4)
 
 cat('Making last 2 weeks plot...\n')
 recentDrifts <- getDbDeployment(db, days=14)

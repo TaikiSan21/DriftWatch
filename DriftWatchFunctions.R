@@ -15,7 +15,12 @@ suppressPackageStartupMessages({
     library(googlesheets4)
     library(ncdf4)
 })
-# Updated 1-19-22 post collapse
+# Updated 1-19-22 post collapse v 1.0
+
+thisVersion <- function() {
+    '1.0'
+}
+
 getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1, progress=FALSE) {
     call <- makeSpotCall(id, where=start)
     xml <- try(read_xml(call))
@@ -559,8 +564,9 @@ makeLatLongGrid <- function(longRange, latRange, longDiff, latDiff, depth=0, tim
                Depth = depth)
 }
 
-updateNc <- function(file='RTOFScurrent.nc', id, vars) {
+updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     tryCatch({
+        # browser()
         rangeDf <- makeRangeDf()
         if(file.exists(file)) {
             fInfo <- file.info(file)
@@ -570,7 +576,7 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars) {
                 return(TRUE)
             }
             if(isTRUE(ncTry$error)) {
-                msg <- read.table(file, sep='\n')
+                msg <- suppressWarnings(read.table(file, sep='\n'))
                 msg <- msg[1,1]
                 if(grepl('does not intersect actual time', msg)) {
                     splitMsg <- strsplit(msg, ' ')[[1]]
@@ -593,7 +599,10 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars) {
             edi <- edi$list[[whichHy]]
         }
         edi <- varSelect(edi, vars)
-        downloadEnv(rangeDf, edi, fileName=file, buffer=c(.1, .1, 0))
+        downloadEnv(rangeDf, edi, fileName=file, buffer=c(.1, .1, 0), progress = FALSE)
+        if(isTRUE(rerun)) {
+            updateNc(file, id, vars, rerun=FALSE)
+        }
     },
     error = function(e) {
         warning('Unable to update file: ', file)
@@ -1047,4 +1056,69 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE) {
         }
         plotAPIDrift(thisDep, filename=fname, current=current, dataPath=dataPath)
     }
+}
+
+sheetToDbDepFormat <- function(x, new=FALSE) {
+    if(new) {
+        selCols <- c('Deployment_Date_UTC',
+                     'Data_Start_UTC',
+                     'Recovery_Date_UTC',
+                     'Data_End_UTC',
+                     "GPS ID (if appropriate - top / bottom)",
+                     'Project',
+                     'DeploymentID',
+                     'Site'
+        )
+    } else {
+        selCols <- c('Deployment_Date',
+                     'Data_Start',
+                     'Recovery_Date',
+                     'Data_End',
+                     'GPS_ID',
+                     'Project',
+                     'DeploymentID',
+                     'Site'
+        )
+    }
+    dbNames <- c('Start', 'DataStart','End','DataEnd', 'DeviceName', 'DriftName', 'DeploymentID', 'DeploymentSite')
+    x <- dplyr::select(x, all_of(selCols))
+    colnames(x) <- dbNames
+    if(new) {
+        x <- x[-1, ]
+    } else {
+        x <- x[!is.na(x$DriftName), ]
+    }
+    x$DeploymentID <- ifelse(is.na(x$DeploymentID), '', x$DeploymentID)
+    for(i in 1:nrow(x)) {
+        x$DeploymentID[i] <- paste0(paste0(rep(0, 3-nchar(x$DeploymentID[i])), collapse=''), x$DeploymentID[i])
+        for(d in c('DataStart', 'Start', 'End', 'DataEnd')) {
+            val <- x[[d]][i]
+            if(is.null(val) ||
+               is.na(val) ||
+               val == 'NA') {
+                x[[d]][i] <- NA
+            }
+        }
+        if(!is.na(x$DataStart[i])) {
+            x$Start[i] <- x$DataStart[i]
+        }
+        # if(!is.na(x$DataEnd[i])) {
+        #     x$End[i] <- x$DataEnd[i]
+        # }
+    }
+    for(j in c('Start', 'End')) {
+        x[[j]] <- gsub('\\s{0,1}UTC$', '', x[[j]])
+        x[[j]] <- gsub('\\s{0,1}AM$', '', x[[j]])
+        x[[j]] <- gsub('\\s{0,1}PM$', '', x[[j]])
+        x[[j]] <- PAMmisc:::parseToUTC(x[[j]],
+                                       format=c('%m/%d/%Y %H:%M:%S', '%m/%d/%Y'),
+                                       tz='UTC')
+    }
+    x$DriftName <- paste0(x$DriftName, '_', x$DeploymentID)
+    x$DeploymentID <- NULL
+    x$DataStart <- NULL
+    x$DataEnd <- NULL
+    x$DeviceName <- gsub('\\/', ', ', x$DeviceName)
+    drops <- is.na(x$Start) | x$DeviceName == 'NA'
+    x[!drops, ]
 }
