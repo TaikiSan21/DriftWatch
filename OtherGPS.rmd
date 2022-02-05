@@ -1,0 +1,108 @@
+# Other GPS devices
+
+## Lonestar
+email // swfsc8901$adrift 
+key:
+f22e32e6ba5953978f0875c86f07c5ffae24b2bc
+This should get us what we need:
+https://fleetone.lonestartracking.com/api/#method-route-List
+use PAMmisc:::fmtPsx8601 to posxic->char
+https://fleetone.lonestartracking.com/api/v1/unit.json?key=yourapikey
+HTTP GET method - all parameters must be added to the url query string, for example:
+
+https://fleetone.lonestartracking.com/api/v1/unit/list.json?key=yourapikey&unit_id[]=14700&unit_id[]=14701
+
+Route list method is what we need
+ https://fleetone.lonestartracking.com/api/v1/route/list.json
+ from & till datetime string args for route
+
+CAN ONLY do 31 DAYS AT A TIME
+FROM ONLY DOESNT WORK
+```{r}
+key <- 'f22e32e6ba5953978f0875c86f07c5ffae24b2bc'
+keyChar <- paste0('?key=', key)
+routeURL <- 'https://fleetone.lonestartracking.com/api/v1/route/list.json'
+fromPsx <- as.POSIXct('2021-10-01 00:00:00', tz='UTC')
+tillPsx <- as.POSIXct('2021-10-30 00:00:00', tz='UTC')
+fromChar <- paste0('&from=', PAMmisc:::fmtPsx8601(fromPsx))
+tillChar <- paste0('&till=', PAMmisc:::fmtPsx8601(tillPsx))
+fromTil <- GET(paste0(routeURL, keyChar, fromChar, tillChar))
+ftJSON <- fromJSON(rawToChar(fromTil$content))
+```
+
+```{r}
+lsUnitToDf <- function(x, start=TRUE) {
+    id <- x$unit_id
+    data <- dplyr::bind_rows(lapply(x$routes, function(r) {
+        if(isTRUE(start)) {
+            return(r$start[c('time', 'lat', 'lng')])
+        }
+        r$end[c('time', 'lat', 'lng')]
+    }))
+    data$time <- as.POSIXct(data$time, format='%Y-%m-%dT%H:%M:%SZ', tz='UTC')
+    data$id <- id
+    data
+}
+lsToDf <- function(x) {
+    dplyr::bind_rows(lapply(x$data$units, function(u) {
+        lsUnitToDf(u, start=FALSE)
+    }))
+}
+lsDf <- lsToDf(ftJSON)
+```
+ 
+## Rock7 
+my email // Shannon1234*
+As of 2/4/2022 Still seems like only PUSH API is avialable, would need to set up via IT
+Last time I tried the interface was not even working to 
+
+## BlueOcean 
+adrift // $JuzzeBB490
+https://blueapi.boggroup.net/docs/
+BuoyId 176 is our only one right now
+
+Set up authorization by getting token using username/PW. This is passed as header
+to future calls
+```{r}
+library(httr)
+authURL <- 'https://blueapi.boggroup.net/api/v2/auth'
+authBody <- list(type='login', username='adrift', password='$JuzzeBB490')
+authPost <- POST(authURL, body=authBody, encode='json')
+```
+
+```{r}
+library(rjson)
+authJSON <- fromJSON(rawToChar(authPost$content))
+if(isTRUE(authJSON$ok)) {
+    authHeader <- paste0('Bearer ', authJSON$token)
+} else{
+    warning('Authentication failed')
+    authHeader <- FALSE
+}
+```
+
+Get Incremental Messages for All Buoys Assigned to User
+GET https://blueapi.boggroup.net/api/v2/updates?since=<since_cursor>
+
+```{r}
+allMsgURL <- 'https://blueapi.boggroup.net/api/v2/updates'
+sinceCursor <- -1
+if(sinceCursor > 0) {
+    since <- paste0('?since=', sinceCursor)
+} else {
+    since <- ''
+}
+allMsg <- GET(paste0(allMsgURL, since), add_headers(Authorization=authHeader))
+msgJSON <- fromJSON(rawToChar(allMsg$content))
+sinceCursor <- msgJSON$since_cursor
+boJSONtoDf <- function(x) {
+    dplyr::bind_rows(lapply(x$messages, function(m) {
+        if(!('position_latitude' %in% names(m))) {
+            return(NULL)
+        }
+        m$time <- as.POSIXct(m$time, format='%Y-%m-%dT%H:%M:%S', tz='UTC')
+        m
+    }))
+}
+boDf <- boJSONtoDf(msgJSON)
+```
