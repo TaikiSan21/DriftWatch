@@ -16,9 +16,9 @@ suppressPackageStartupMessages({
     library(ncdf4)
 })
 # Updated 1-19-22 post collapse v 1.0
-
+# Updated 2-7-2022 fkin etopos
 thisVersion <- function() {
-    '1.0'
+    '1.1'
 }
 
 getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1, progress=FALSE) {
@@ -255,7 +255,7 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
                          size = 4, xlim=1, ylim=.5, labelBy='DriftName', title=NULL,
                          dataPath='.') {
     if(is.null(etopo)) {
-        etopo <- tempfile()
+        etopo <- file.path(dataPath, 'etopo180.nc')
     } else {
         etopo <- file.path(dataPath, etopo)
     }
@@ -277,10 +277,14 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     if(length(ylim) == 1) {
         ylim <- range(drift$Latitude) + c(-1, 1) * ylim
     }
-    xlim[1] <- max(c(xlim[1], rangeDf$Longitude[1]))
-    xlim[2] <- min(c(xlim[2], rangeDf$Longitude[2]))
-    ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
-    ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
+    xlim[xlim < rangeDf$Longitude[1]] <- rangeDf$Longitude[1]
+    xlim[xlim > rangeDf$Longitude[2]] <- rangeDf$Longitude[2]
+    ylim[ylim < rangeDf$Latitude[1]] <- rangeDf$Latitude[1]
+    ylim[ylim > rangeDf$Latitude[2]] <- rangeDf$Latitude[2]
+    # xlim[1] <- max(c(xlim[1], rangeDf$Longitude[1]))
+    # xlim[2] <- min(c(xlim[2], rangeDf$Longitude[2]))
+    # ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
+    # ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
 
     bathyData <- as.bathy(raster(etopo))
     # browser()
