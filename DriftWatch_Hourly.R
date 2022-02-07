@@ -24,16 +24,17 @@ with_drive_quiet({
     drive_upload(db, path=gdriveDest, overwrite = TRUE)
 })
 
-
+# current 2=RTOFSNOWCAST, 4=HYCOM
+useCurrent <- 2
 cat('Making individual drift plots...\n')
-doDriftPlots(db, verbose=T, current=4)
+doDriftPlots(db, verbose=T, current=useCurrent)
 
 cat('Making last 2 weeks plot...\n')
 recentDrifts <- getDbDeployment(db, days=14)
 plotAPIDrift(recentDrifts, filename='Last14Days.png', current=FALSE)
 
 cat('Making test deployment worksheet plots...\n')
-plotTestDeployments()
+plotTestDeployments(current=useCurrent)
 
 cat('Uploading plots to drive...\n')
 with_drive_quiet({

@@ -3,7 +3,7 @@ suppressPackageStartupMessages({
     library(RSQLite)
     library(plotKML)
     library(xml2)
-    library(raster)
+    # library(raster)
     library(marmap)
     library(sf)
     library(viridis)
@@ -286,7 +286,7 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     # ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
     # ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
 
-    bathyData <- as.bathy(raster(etopo))
+    bathyData <- as.bathy(raster::raster(etopo))
     # browser()
     bathyData <- try(subsetBathy(bathyData, x=xlim, y=ylim, locator = FALSE), silent=TRUE)
     if(inherits(bathyData, 'try-error')) {
@@ -569,49 +569,56 @@ makeLatLongGrid <- function(longRange, latRange, longDiff, latDiff, depth=0, tim
 }
 
 updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
-    tryCatch({
-        # browser()
-        rangeDf <- makeRangeDf()
-        if(file.exists(file)) {
-            fInfo <- file.info(file)
-            ncTry <- nc_open(file, return_on_error=TRUE)
-            if(isFALSE(ncTry$error) &&
-               as.numeric(difftime(Sys.time(), fInfo$mtime, units='days')) < .5) {
-                return(TRUE)
-            }
-            if(isTRUE(ncTry$error)) {
-                msg <- suppressWarnings(read.table(file, sep='\n'))
-                msg <- msg[1,1]
-                if(grepl('does not intersect actual time', msg)) {
-                    splitMsg <- strsplit(msg, ' ')[[1]]
-                    endTime <- splitMsg[length(splitMsg)]
-                    endTime <- as.POSIXct(endTime, format='%Y-%m-%dT%H:%M:%SZ', tz='UTC')
-                    if(as.numeric(difftime(rangeDf$UTC[2], endTime, units='days')) < 1) {
-                        rangeDf$UTC <- endTime
-                    }
+    rangeDf <- makeRangeDf()
+    if(file.exists(file)) {
+        fInfo <- file.info(file)
+        ncTry <- nc_open(file, return_on_error=TRUE)
+        if(isFALSE(ncTry$error) &&
+           as.numeric(difftime(Sys.time(), fInfo$mtime, units='days')) < .5) {
+            return(TRUE)
+        }
+        if(isTRUE(ncTry$error)) {
+            msg <- suppressWarnings(read.table(file, sep='\n'))
+            msg <- msg[1,1]
+            cat('Download failed with message "', msg, '"\n')
+            if(grepl('does not intersect actual time', msg)) {
+                splitMsg <- strsplit(msg, ' ')[[1]]
+                endTime <- splitMsg[length(splitMsg)]
+                endTime <- as.POSIXct(endTime, format='%Y-%m-%dT%H:%M:%SZ', tz='UTC')
+                if(as.numeric(difftime(rangeDf$UTC[2], endTime, units='days')) < 1) {
+                    cat('Changing end time to', as.character(endTime), '\n')
+                    rangeDf$UTC <- endTime
                 }
+            } else {
+                cat('Unexpected error message, copying file to ERROR.nc\n')
+                file.copy(from=file, to='ERROR.nc', overwrite = TRUE)
             }
         }
-        if(inherits(id, 'edinfo')) {
-            edi <- id
-        } else {
-            edi <- erddapToEdinfo(id, chooseVars = FALSE)
-        }
-        # browser()
-        if(inherits(edi, 'hycomList')) {
-            whichHy <- PAMmisc:::whichHycom(rangeDf$UTC[2], edi)
-            edi <- edi$list[[whichHy]]
-        }
-        edi <- varSelect(edi, vars)
+    }
+    if(inherits(id, 'edinfo')) {
+        edi <- id
+    } else {
+        edi <- erddapToEdinfo(id, chooseVars = FALSE)
+    }
+    # browser()
+    if(inherits(edi, 'hycomList')) {
+        whichHy <- PAMmisc:::whichHycom(rangeDf$UTC[2], edi)
+        edi <- edi$list[[whichHy]]
+    }
+    edi <- varSelect(edi, vars)
+    tryCatch({
         downloadEnv(rangeDf, edi, fileName=file, buffer=c(.1, .1, 0), progress = FALSE)
-        if(isTRUE(rerun)) {
-            updateNc(file, id, vars, rerun=FALSE)
-        }
     },
     error = function(e) {
-        warning('Unable to update file: ', file)
-        return(FALSE)
-    })
+        if(isTRUE(rerun)) {
+            cat('First download of', file, 'failed, trying again...\n')
+            return(updateNc(file, id, vars, rerun=FALSE))
+        }
+        cat('Download of file', file, 'failed twice with error message', e$message, '\n')
+        FALSE
+    },
+    TRUE
+    )
 }
 
 makeRangeDf <- function() {
@@ -722,7 +729,8 @@ recentBuoySummary <- function(db, skip=NULL, file=NULL, window=6, dataPath='.', 
 plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
                                 file = 'TestDeployments.csv',
                                 dataPath='.',
-                                etopo='etopo180.nc') {
+                                etopo='etopo180.nc',
+                                current=2) {
     with_drive_quiet({
         drive_download(sheet, path=file, overwrite = TRUE)
     })
@@ -764,7 +772,7 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
         latr <- as.numeric(latr)
         lonr <- as.numeric(lonr)
         plotAPIDrift(thisDrift, etopo=etopo, labelBy = 'DriftName',
-                     filename=thisFile, current=4, dataPath = dataPath,
+                     filename=thisFile, current=current, dataPath = dataPath,
                      xlim=lonr, ylim=latr)
     }
 }
@@ -783,7 +791,7 @@ addToGps <- function(x, maxSpeed = 4 / 3.6) {
     x <- arrange(x, UTC)
     timeDiff <- as.numeric(difftime(x$UTC[2:(nrow(x))], x$UTC[1:(nrow(x)-1)], units='secs'))
     distance <- distGeo(cbind(x$Longitude[1:(nrow(x)-1)], x$Latitude[1:(nrow(x)-1)]),
-                                   cbind(x$Longitude[2:(nrow(x))], x$Latitude[2:(nrow(x))]))
+                        cbind(x$Longitude[2:(nrow(x))], x$Latitude[2:(nrow(x))]))
     x$Distance <- c(distance, 0)
     x$Speed <- c(distance / timeDiff, 0)
     tooFast <- x$Speed > maxSpeed

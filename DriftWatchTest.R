@@ -75,3 +75,8 @@ taskscheduler_create(taskname = "DriftWatchHourly", rscript = hrlyScript,
 'UPDATE table_name
 SET column1 = value1, column2 = value2, ...
 WHERE condition;'
+
+
+# HYCOM NOTES
+#* THREDDS servers update/restart daily between 2:00 AM - 3:00 AM, and 12:00 PM - 1:00 PM EST/EDT.
+#* Also dont subset more than 1 day at a time is their request wit NCSS
