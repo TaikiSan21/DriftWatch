@@ -622,6 +622,8 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     if(inherits(edi, 'hycomList')) {
         whichHy <- PAMmisc:::whichHycom(rangeDf$UTC[2], edi)
         edi <- edi$list[[whichHy]]
+        timeLim <- hycomToEdinfo(edi$dataset, chooseVars = FALSE)
+        rangeDf$UTC <- timeLim$limits$UTC[2]
     }
     edi <- varSelect(edi, vars)
     tryCatch({

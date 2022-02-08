@@ -25,7 +25,7 @@ with_drive_quiet({
 })
 
 # current 2=RTOFSNOWCAST, 4=HYCOM
-useCurrent <- 2
+useCurrent <- 4
 cat('Making individual drift plots...\n')
 doDriftPlots(db, verbose=T, current=useCurrent)
 
