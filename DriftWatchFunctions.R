@@ -259,12 +259,14 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     } else {
         etopo <- file.path(dataPath, etopo)
     }
-    if(!file.exists(etopo)) {
-        edi <- erddapToEdinfo('etopo180', chooseVars = FALSE)
-        edi <- varSelect(edi, TRUE)
-        etopo <- downloadEnv(drift, edinfo=edi, fileName = etopo, buffer=c(1, 1, 0))
-    }
     rangeDf <- makeRangeDf()
+    # browser()
+    if(!file.exists(etopo)) {
+        # edi <- erddapToEdinfo('etopo180', chooseVars = FALSE)
+        # edi <- varSelect(edi, TRUE)
+        # etopo <- downloadEnv(drift, edinfo=edi, fileName = etopo, buffer=c(1, 1, 0))
+        updateNc(etopo, 'etopo180', vars=TRUE)
+    }
     if(is.null(xlim)) {
         xlim <- range(drift$Longitude)
     }
@@ -277,6 +279,16 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     if(length(ylim) == 1) {
         ylim <- range(drift$Latitude) + c(-1, 1) * ylim
     }
+    if(xlim[2] < rangeDf$Longitude[1] ||
+       xlim[1] > rangeDf$Longitude[2] ||
+       ylim[1] < rangeDf$Latitude[1] ||
+       ylim[2] > rangeDf$Latitude[2]) {
+        cat('\nPlot is entirely out of range: ',
+            paste0(xlim, collapse=' -> '), ', ',
+            paste0(ylim, collapse=' -> '), ' vs. (-135 -> -108, 20 -> 55)',
+            sep='')
+        return(NULL)
+    }
     xlim[xlim < rangeDf$Longitude[1]] <- rangeDf$Longitude[1]
     xlim[xlim > rangeDf$Longitude[2]] <- rangeDf$Longitude[2]
     ylim[ylim < rangeDf$Latitude[1]] <- rangeDf$Latitude[1]
@@ -285,13 +297,19 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     # xlim[2] <- min(c(xlim[2], rangeDf$Longitude[2]))
     # ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
     # ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
-
+    
+    
     bathyData <- as.bathy(raster::raster(etopo))
     # browser()
     bathyData <- try(subsetBathy(bathyData, x=xlim, y=ylim, locator = FALSE), silent=TRUE)
     if(inherits(bathyData, 'try-error')) {
-        return(plotAPIDrift(drift, etopo=NULL, filename, bathy, sl, wca, current,
-                            wind, swell, wave, depth,time, size, xlim, ylim, labelBy, title, dataPath))
+        # return(plotAPIDrift(drift, etopo=NULL, filename, bathy, sl, wca, current,
+        #                     wind, swell, wave, depth,time, size, xlim, ylim, labelBy, title, dataPath))
+        cat('\nBathymetry subset failed for coordinates:',
+            paste0(xlim, collapse=' -> '), ', ',
+            paste0(ylim, collapse=' -> ')
+        )
+        return(NULL)
     }
     wid <- nrow(bathyData)
     xmar <- 1.24
