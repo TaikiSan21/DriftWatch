@@ -910,6 +910,7 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
         }
         latr <- as.numeric(latr)
         lonr <- as.numeric(lonr)
+
         outFiles <- c(outFiles,
                       plotAPIDrift(thisDrift, etopo=etopo, labelBy = 'DriftName',
                                    filename=thisFile, current=current, dataPath = dataPath,

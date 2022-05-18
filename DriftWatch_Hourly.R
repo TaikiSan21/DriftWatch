@@ -11,7 +11,8 @@ source('DriftWatchFunctions.R')
 # Destination folder
 gdriveDest <- '~/DriftWatch/'
 
-cat('------------Script version', thisVersion(), 'run on', as.character(Sys.time()), '---------------')
+cat('\n------------Script version', thisVersion(), 'run on', as.character(Sys.time()), '---------------')
+
 cat('\nDirectory set to', script.dir)
 db <- 'SPOTGPS_Logger.sqlite3'
 spotId <- '09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys'
@@ -33,7 +34,9 @@ cat('\nMaking individual drift plots...')
 driftPlots <- doDriftPlots(db, verbose=T, current=useCurrent)
 
 cat('\nMaking last 2 weeks plot...')
-noPlot <- c('ADRIFT_008', 'ADRIFT_004')
+
+noPlot <- c('ADRIFT_004', 'ADRIFT_008')
+
 recentDrifts <- getDbDeployment(db, days=14)
 recentDrifts <- recentDrifts[!(recentDrifts$DriftName %in% noPlot), ]
 twoWeekPlot <- plotAPIDrift(recentDrifts, filename='Last14Days.png', current=FALSE)
