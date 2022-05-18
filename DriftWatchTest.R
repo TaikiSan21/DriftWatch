@@ -4,7 +4,7 @@ db <- 'SPOTGPS_Logger.sqlite3'
 spotId <- '09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys'
 update <- addAPIToDb(id=spotId, db=db)
 
-
+addGpxToDb(file.choose(), db)
 
 
 # Deploy sheet

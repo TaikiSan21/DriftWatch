@@ -14,14 +14,17 @@ suppressPackageStartupMessages({
     library(readr)
     library(googlesheets4)
     library(ncdf4)
+    library(httr)
+    library(rjson)
 })
 # Updated 1-19-22 post collapse v 1.0
 # Updated 2-7-2022 fkin etopos
+# Updated 5-2-2022 adding Lonestar
 thisVersion <- function() {
-    '1.1'
+    '1.2'
 }
 
-getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1, progress=FALSE) {
+getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1) {
     call <- makeSpotCall(id, where=start)
     xml <- try(read_xml(call))
     if(inherits(xml, 'try-error')) {
@@ -31,20 +34,96 @@ getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1, 
     if(is.null(df)) {
         return(NULL)
     }
+    df
+}
+
+
+getLonestarAPIData <- function(key='f22e32e6ba5953978f0875c86f07c5ffae24b2bc', db, start=NULL, days=30) {
+    if(is.null(start)) {
+        start <- nowUTC() - days * 24 * 3600
+    }
+    keyChar <- paste0('?key=', key)
+    routeURL <- 'https://fleetone.lonestartracking.com/api/v1/route/list.json'
+    if(days > 30) {
+        days <- 30
+    }
+    end <- start + days * 24 * 3600
+    fromChar <- paste0('&from=', PAMmisc:::fmtPsx8601(start))
+    tillChar <- paste0('&till=', PAMmisc:::fmtPsx8601(end))
+    fromTil <- GET(paste0(routeURL, keyChar, fromChar, tillChar))
+    if(fromTil$status_code != 200) {
+        cat('\nLonestar API access attempt was not successful')
+        return(NULL)
+    }
+    ftJSON <- fromJSON(rawToChar(fromTil$content))
+
+    lsDf <- lsToDf(ftJSON)
+    if(is.null(lsDf) ||
+           nrow(lsDf) == 0) {
+        return(NULL)
+    }
+    lsDf
+}
+
+# input json from ls API
+lsToDf <- function(x, start=TRUE) {
+    result <- dplyr::bind_rows(lapply(x$data$units, function(u) {
+        data <- dplyr::bind_rows(lapply(u$routes, function(r) {
+            startEnd <- ifelse(start, 'start', 'end')
+            result <- r[[startEnd]][c('time', 'lat', 'lng')]
+            # cat(r$route_id, '\n')
+            if(is.null(result)) {
+                return(NULL)
+            }
+            names(result) <- c('UTC', 'Latitude', 'Longitude')
+            result$Id <- r$route_id
+            result
+        }))
+        data$UTC <- as.POSIXct(data$UTC, format='%Y-%m-%dT%H:%M:%SZ', tz='UTC')
+        data$DeviceName <- as.character(u$unit_id)
+        data$DeviceId <- as.character(u$unit_id)
+        data$Message <- NA
+        data
+    }))
+    if(is.null(result) ||
+       nrow(result) == 0) {
+        return(result)
+    }
+    result <- result[c('Id', 'Latitude', 'Longitude', 'UTC', 'DeviceName', 'DeviceId', 'Message')]
+    result
+}
+
+getAPIData <- function(x, db, source=c('spot', 'lonestar'), progress=FALSE) {
+    source <- match.arg(source)
+    switch(source,
+                 'spot' = {
+                     start <- 1
+                     df <- getSpotAPIData(x, db, start=start)
+                     nFours <- 60
+                     tryMax <- 15
+                 },
+                 'lonestar' = {
+                     days <- 29
+                     start <- nowUTC() - days * 24 * 3600
+                     df <- getLonestarAPIData(x, db, start=start, days=days)
+                     nFours <- 15
+                     tryMax <- 12
+                 }
+    )
     isDupe <- checkDupeCoord(df, db)
     if(all(isDupe)) {
         return(NULL)
     }
-    checkCols <- c('Latitude', 'Longitude', 'DeviceName')
-    df$UTC <- as.character(df$UTC)
     toAdd <- df[!isDupe, ]
+    toAdd$UTC <- as.character(toAdd$UTC)
     # go again if everything was new - means more to get
     # if(start == 1) {
-    if(sum(isDupe) == 0 &&
-       start < 10000) {
+    tryMax <- 10
+    nTry <- 1
+    while(!any(isDupe) &&
+       nTry < tryMax) {
         # cat(sum(isDupe))
-        cat('\nWaiting between API calls...\n')
-        nFours <- 60
+        cat(paste0('\nWaiting between ', source, ' API calls...\n'))
         if(progress) {
             pb <- txtProgressBar(min=0, max=nFours, initial=0, style=3)
         }
@@ -54,7 +133,32 @@ getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1, 
                 setTxtProgressBar(pb, value=i)
             }
         }
-        toAdd <- distinct(bind_rows(toAdd, getSpotAPIData(id, db, start+40)))
+        switch(source,
+               'spot' = {
+                   start <- start + 40
+                   newData <- getSpotAPIData(x, db, start=start)
+               },
+               'lonestar' = {
+                   start <- start - days * 24 * 3600
+                   newData <- getLonestarAPIData(x, db, start=start, days=days)
+               }
+        )
+
+        if(is.null(newData) ||
+           nrow(newData) == 0) {
+            break
+        }
+        isDupe <- checkDupeCoord(newData, db)
+        if(all(isDupe)) {
+            break
+        }
+        newData <- newData[!isDupe, ]
+        newData$UTC <- as.character(newData$UTC)
+        toAdd <- distinct(bind_rows(toAdd, newData))
+        if(any(isDupe)) {
+            break
+        }
+        nTry <- nTry + 1
     }
     badCoords <- toAdd$Latitude < -90 | toAdd$Longitude < -180
     toAdd <- toAdd[!badCoords, ]
@@ -62,21 +166,28 @@ getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1, 
     toAdd
 }
 
-addAPIToDb <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db) {
+# x is key or id for API
+addAPIToDb <- function(x='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, source=c('spot', 'lonestar')) {
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
     dbDf <- dbReadTable(con, 'gpsData')
     dbDf$UTC <- pgDateToPosix(dbDf$UTC)
-    apiData <- getSpotAPIData(id, dbDf)
-    if(!is.null(apiData)) {
+    apiData <- getAPIData(x, dbDf, source)
+
+    if(!is.null(apiData) &&
+       nrow(apiData) > 0) {
         dbAppendTable(con, 'gpsData', apiData)
     }
     dbLog <- dbReadTable(con, 'gpsLogger')
     logId <- ifelse(nrow(dbLog) == 0, 1, max(dbLog$Id) + 1)
     now <- nowUTC()
+    sourceName <- switch(match.arg(source),
+                         'spot' = 'SPOT API',
+                         'lonestar' = 'Lonestar API'
+    )
     logAppend <- data.frame(Id = logId, UTC = as.character(now),
                             RowsAdded = ifelse(is.null(apiData), 0, nrow(apiData)),
-                            Source = 'API Call')
+                            Source = sourceName)
     dbAppendTable(con, 'gpsLogger', logAppend)
     apiData
 }
@@ -132,8 +243,9 @@ spotXmlToDf <- function(x) {
         return(NULL)
     }
     df$dateTime <- as.POSIXct(df$dateTime, format='%Y-%m-%dT%H:%M:%S+0000', tz='UTC')
-    names(df) <- c('Id', 'SPOTId', 'DeviceName', 'MessageType', 'Latitude', 'Longitude', 'UTC', 'BatteryState')
-    df <- df[c('Id', 'Latitude', 'Longitude', 'UTC', 'DeviceName', 'SPOTId', 'MessageType', 'BatteryState')]
+    names(df) <- c('Id', 'DeviceId', 'DeviceName', 'MessageType', 'Latitude', 'Longitude', 'UTC', 'BatteryState')
+    df$Message <- paste0('MessageType: ',df$MessageType, ', Battery State: ', df$BatteryState)
+    df <- df[c('Id', 'Latitude', 'Longitude', 'UTC', 'DeviceName', 'DeviceId', 'Message')]
     df$Latitude <- as.numeric(df$Latitude)
     df$Longitude <- as.numeric(df$Longitude)
     df$Id <- as.numeric(df$Id)
@@ -297,8 +409,8 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     # xlim[2] <- min(c(xlim[2], rangeDf$Longitude[2]))
     # ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
     # ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
-    
-    
+
+
     bathyData <- as.bathy(raster::raster(etopo))
     # browser()
     bathyData <- try(subsetBathy(bathyData, x=xlim, y=ylim, locator = FALSE), silent=TRUE)
@@ -496,6 +608,10 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     }
 
     myScaleBathy(bathyData, deg=diff(xlim) * .2, x= 'bottomleft', inset=5, col='white')
+    if(is.null(filename)) {
+        return(drift)
+    }
+    filename
 }
 
 myGradLegend <- function(lastLeg=NULL, vals, cols, title, cex, tCex=.67) {
@@ -758,6 +874,8 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
                             col_types=list(col_double(), col_double(),
                                            col_character(), col_character(),
                                            col_character(), col_character(), col_character()))
+    naCols <- is.na(deps$Latitude) | is.na(deps$Longitude)
+    deps <- deps[!naCols, ]
     colnames(deps)[3] <- 'DriftName'
     deps$UTC <- nowUTC()
     nDeps <- nrow(deps)
@@ -766,6 +884,7 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
     deps$LatRange[is.na(deps$LatRange)] <- '.5'
     deps$LonRange[is.na(deps$LonRange)] <- '1'
 
+    outFiles <- character(0)
     for(i in unique(deps$DriftName)) {
         thisDrift <- deps %>% filter(DriftName == i)
         if(is.null(thisDrift$DeploymentSite) ||
@@ -791,10 +910,13 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
         }
         latr <- as.numeric(latr)
         lonr <- as.numeric(lonr)
-        plotAPIDrift(thisDrift, etopo=etopo, labelBy = 'DriftName',
-                     filename=thisFile, current=current, dataPath = dataPath,
-                     xlim=lonr, ylim=latr)
+        outFiles <- c(outFiles,
+                      plotAPIDrift(thisDrift, etopo=etopo, labelBy = 'DriftName',
+                                   filename=thisFile, current=current, dataPath = dataPath,
+                                   xlim=lonr, ylim=latr)
+        )
     }
+    outFiles
 }
 
 addToGps <- function(x, maxSpeed = 4 / 3.6) {
@@ -1071,6 +1193,7 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE) {
     if(is.character(depGps)) {
         depGps <- getDbDeployment(depGps)
     }
+    outFiles <- character(0)
     for(d in unique(depGps$DriftName)) {
         thisDep <- depGps[depGps$DriftName == d, ]
         fname <- paste0(format(min(thisDep$UTC), format='%m-%d-%Y'))
@@ -1086,8 +1209,10 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE) {
         if(verbose) {
             cat('Plotting drift', thisDep$DriftName[1], '\n')
         }
-        plotAPIDrift(thisDep, filename=fname, current=current, dataPath=dataPath)
+        outFiles <- c(outFiles,
+                  plotAPIDrift(thisDep, filename=fname, current=current, dataPath=dataPath))
     }
+    outFiles
 }
 
 sheetToDbDepFormat <- function(x, new=FALSE) {
@@ -1153,4 +1278,25 @@ sheetToDbDepFormat <- function(x, new=FALSE) {
     x$DeviceName <- gsub('\\/', ', ', x$DeviceName)
     drops <- is.na(x$Start) | x$DeviceName == 'NA'
     x[!drops, ]
+}
+
+# with_drive_quiet({
+#     allPngs <- list.files(pattern='png$', full.names = TRUE, recursive = FALSE)
+#     for(i in seq_along(allPngs)) {
+#         modtime <- file.info(allPngs[i])$mtime
+#         diff <- as.numeric(difftime(Sys.time(), modtime, units='hours'))
+#         if(diff > 1) next
+#         drive_upload(allPngs[i], path=gdriveDest, overwrite = TRUE)
+#     }
+# })
+
+doGdriveUpload <- function(files, destination, modHours=1) {
+    with_drive_quiet({
+        for(i in seq_along(files)) {
+            modtime <- file.info(files[i])$mtime
+            diff <- as.numeric(difftime(Sys.time(), modtime, units='hours'))
+            if(diff > modHours) next
+            drive_upload(files[i], path=destination, overwrite=TRUE)
+        }
+    })
 }
