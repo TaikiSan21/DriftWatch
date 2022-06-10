@@ -3,7 +3,6 @@ suppressPackageStartupMessages({
     library(RSQLite)
     library(plotKML)
     library(xml2)
-    # library(raster)
     library(marmap)
     library(sf)
     library(viridis)
@@ -20,8 +19,9 @@ suppressPackageStartupMessages({
 # Updated 1-19-22 post collapse v 1.0
 # Updated 2-7-2022 fkin etopos
 # Updated 5-2-2022 adding Lonestar
+# Updated 6-10-2022 Trying to sort out crashes on first load of the day and custom plots on test dep sheet
 thisVersion <- function() {
-    '1.2'
+    '1.3'
 }
 
 getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1) {
@@ -227,7 +227,6 @@ makeSpotCall <- function(id, where=1, date=FALSE) {
 
 spotXmlToDf <- function(x) {
     xmlMessages <- xml_find_all(x, '//messages/message')
-    # browser()
     if(length(xmlMessages) == 0) {
         return(NULL)
     }
@@ -258,7 +257,6 @@ gpxToDf <- function(x) {
     result <- do.call(rbind, lapply(gpx$tracks, function(x) {
         tmp <- vector('list', length = length(x))
         for(i in seq_along(x)) {
-            # browser()
             df <- x[[i]][, c('lon', 'lat', 'time')]
             df$DeviceName <- names(x)[i]
             tmp[[i]] <- df
@@ -372,11 +370,8 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
         etopo <- file.path(dataPath, etopo)
     }
     rangeDf <- makeRangeDf()
-    # browser()
+    
     if(!file.exists(etopo)) {
-        # edi <- erddapToEdinfo('etopo180', chooseVars = FALSE)
-        # edi <- varSelect(edi, TRUE)
-        # etopo <- downloadEnv(drift, edinfo=edi, fileName = etopo, buffer=c(1, 1, 0))
         updateNc(etopo, 'etopo180', vars=TRUE)
     }
     if(is.null(xlim)) {
@@ -405,18 +400,11 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     xlim[xlim > rangeDf$Longitude[2]] <- rangeDf$Longitude[2]
     ylim[ylim < rangeDf$Latitude[1]] <- rangeDf$Latitude[1]
     ylim[ylim > rangeDf$Latitude[2]] <- rangeDf$Latitude[2]
-    # xlim[1] <- max(c(xlim[1], rangeDf$Longitude[1]))
-    # xlim[2] <- min(c(xlim[2], rangeDf$Longitude[2]))
-    # ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
-    # ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
-
 
     bathyData <- as.bathy(raster::raster(etopo))
-    # browser()
+    
     bathyData <- try(subsetBathy(bathyData, x=xlim, y=ylim, locator = FALSE), silent=TRUE)
     if(inherits(bathyData, 'try-error')) {
-        # return(plotAPIDrift(drift, etopo=NULL, filename, bathy, sl, wca, current,
-        #                     wind, swell, wave, depth,time, size, xlim, ylim, labelBy, title, dataPath))
         cat('\nBathymetry subset failed for coordinates:',
             paste0(xlim, collapse=' -> '), ', ',
             paste0(ylim, collapse=' -> ')
@@ -518,7 +506,7 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
                    edi <- 'ncepRtofsG3DNow6hrlyR2'
                }
         )
-        # browser()
+        
         updateNc(currentNc, edi, vars=curVar)
         curLeg <- plotArrowGrid(xLim=xlim, yLim=ylim, diff=NULL, nc=currentNc,
                                 xyVars = xyVars, depth=depth, time=time,
@@ -707,6 +695,9 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     if(file.exists(file)) {
         fInfo <- file.info(file)
         ncTry <- nc_open(file, return_on_error=TRUE)
+        if(isFALSE(ncTry$error)) {
+            nc_close(ncTry)
+        }
         if(isFALSE(ncTry$error) &&
            as.numeric(difftime(Sys.time(), fInfo$mtime, units='days')) < .5) {
             return(TRUE)
@@ -734,7 +725,6 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     } else {
         edi <- erddapToEdinfo(id, chooseVars = FALSE)
     }
-    # browser()
     if(inherits(edi, 'hycomList')) {
         whichHy <- PAMmisc:::whichHycom(rangeDf$UTC[2], edi)
         edi <- edi$list[[whichHy]]
@@ -743,6 +733,7 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     }
     edi <- varSelect(edi, vars)
     tryCatch({
+        cat('Downloading file', file, '...\n')
         downloadEnv(rangeDf, edi, fileName=file, buffer=c(.1, .1, 0), progress = FALSE)
     },
     error = function(e) {
@@ -866,7 +857,8 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
                                 file = 'TestDeployments.csv',
                                 dataPath='.',
                                 etopo='etopo180.nc',
-                                current=2) {
+                                current=2, 
+                                driftData=NULL) {
     with_drive_quiet({
         drive_download(sheet, path=file, overwrite = TRUE)
     })
@@ -874,9 +866,12 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
                             col_types=list(col_double(), col_double(),
                                            col_character(), col_character(),
                                            col_character(), col_character(), col_character()))
-    naCols <- is.na(deps$Latitude) | is.na(deps$Longitude)
-    deps <- deps[!naCols, ]
     colnames(deps)[3] <- 'DriftName'
+    naCols <- is.na(deps$Latitude) | is.na(deps$Longitude)
+    if(!is.null(driftData)) {
+        naCols <- naCols & !(deps$DriftName %in% driftData$DriftName)
+    }
+    deps <- deps[!naCols, ]
     deps$UTC <- nowUTC()
     nDeps <- nrow(deps)
     deps <- rbind(deps, deps)
@@ -886,7 +881,17 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
 
     outFiles <- character(0)
     for(i in unique(deps$DriftName)) {
-        thisDrift <- deps %>% filter(DriftName == i)
+        if(!is.null(driftData) &&
+           i %in% driftData$DriftName) {
+            thisDrift <- driftData[driftData$DriftName == i, ]
+            thisDrift$LatRange <- deps$LatRange[deps$DriftName == i][1]
+            thisDrift$LonRange <- deps$LonRange[deps$DriftName == i][1]
+        } else {
+            thisDrift <- deps %>% filter(DriftName == i)
+            if(nrow(thisDrift) > 2) {
+                thisDrift$DriftName <- paste0(thisDrift$DriftName, '_', rep(1:(nrow(thisDrift)/2), 2))
+            }
+        }
         if(is.null(thisDrift$DeploymentSite) ||
            is.na(unique(thisDrift$DeploymentSite))) {
             thisFile <- paste0(i, '.png')
@@ -897,9 +902,7 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
         # depTimeLocal <- min(thisDrift$UTC) - 7 * 3600
         # depTimeLocal <- as.character(format(depTimeLocal, format='%m-%d-%Y'))
         # thisFile <- paste0(depTimeLocal, '_',thisFile)
-        if(nrow(thisDrift) > 2) {
-            thisDrift$DriftName <- paste0(thisDrift$DriftName, '_', rep(1:(nrow(thisDrift)/2), 2))
-        }
+        
         latr <- thisDrift$LatRange[1]
         if(grepl(',', latr)) {
             latr <- strsplit(latr, ',')[[1]]
@@ -1195,6 +1198,8 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE) {
         depGps <- getDbDeployment(depGps)
     }
     outFiles <- character(0)
+    # browser()
+    
     for(d in unique(depGps$DriftName)) {
         thisDep <- depGps[depGps$DriftName == d, ]
         fname <- paste0(format(min(thisDep$UTC), format='%m-%d-%Y'))

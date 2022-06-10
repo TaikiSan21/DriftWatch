@@ -42,7 +42,7 @@ recentDrifts <- recentDrifts[!(recentDrifts$DriftName %in% noPlot), ]
 twoWeekPlot <- plotAPIDrift(recentDrifts, filename='Last14Days.png', current=FALSE)
 
 cat('\nMaking test deployment worksheet plots...')
-testDepPlots <- plotTestDeployments(current=useCurrent)
+testDepPlots <- plotTestDeployments(current=useCurrent, driftData=getDbDeployment(db))
 
 cat('\nUploading plots to drive...')
 doGdriveUpload(c(driftPlots, twoWeekPlot), paste0(gdriveDest, 'DriftPlots/'))
