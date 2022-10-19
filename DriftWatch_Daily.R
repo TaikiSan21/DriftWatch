@@ -18,6 +18,4 @@ with_drive_quiet(drive_upload('RecentBuoySummary.csv', path=gdriveDest, type='sp
 
 # Archive older plots
 
-# Check for new deployments
 
-# GPS archive if needed

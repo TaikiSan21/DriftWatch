@@ -1,0 +1,140 @@
+<metadata>
+	<eainfo>
+		<detailed>
+			<attr>
+				<attrdef>Acres</attrdef>
+				<attalias>Acres</attalias>
+				<attrlabl>Acres</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Area_Name</attrdef>
+				<attalias>Area_Name</attalias>
+				<attrlabl>Area_Name</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Internal feature number.</attrdef>
+				<attalias>FID</attalias>
+				<attrlabl>FID</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Hectares</attrdef>
+				<attalias>Hectares</attalias>
+				<attrlabl>Hectares</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Feature geometry.</attrdef>
+				<attalias>Shape</attalias>
+				<attrlabl>Shape</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Area of feature in internal units squared.</attrdef>
+				<attalias>Shape_Area</attalias>
+				<attrlabl>Shape_Area</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Shape_Leng</attrdef>
+				<attalias>Shape_Leng</attalias>
+				<attrlabl>Shape_Leng</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Sq_km</attrdef>
+				<attalias>Sq_km</attalias>
+				<attrlabl>Sq_km</attrlabl>
+			</attr>
+			<attr>
+				<attrdef>Sq_Mi</attrdef>
+				<attalias>Sq_Mi</attalias>
+				<attrlabl>Sq_Mi</attrlabl>
+			</attr>
+		</detailed>
+	</eainfo>
+	<distinfo>
+		<techpreq>Desktop GIS software.</techpreq>
+		<stdorder>
+			<digform>
+				<digtopt>
+					<onlinopt>
+						<computer>
+							<networka>
+								<networkr>https://databasin.org/datasets/03224aeb47394729a064a5d35c097b4a/</networkr>
+							</networka>
+						</computer>
+						<accinstr>Download from https://databasin.org</accinstr>
+					</onlinopt>
+				</digtopt>
+				<digtinfo>
+					<formvern>ArcGIS 10</formvern>
+					<formspec>Feature Layer</formspec>
+					<formname>Feature Layer</formname>
+					<filedec>No compression applied</filedec>
+				</digtinfo>
+			</digform>
+			<ordering>Download from https://databasin.org</ordering>
+			<fees>None</fees>
+		</stdorder>
+		<distliab>No warranty is made by Data Basin for use of this dataset.  No warranty is made by Data Basin regarding the accuracy, reliability, or completeness of this dataset. In no event shall Data Basin have any liability whatsoever for payment of any consequential, incidental, indirect, special, or tort damages of any kind, including, but not limited to, any loss of profits arising out of the use or reliance on the geographic or attribute data contained within this dataset or arising out of the delivery, installation, operation, or support by Data Basin.</distliab>
+		<distrib>
+			<cntinfo>
+				<cntemail>databasin_admin@consbio.org</cntemail>
+				<cntvoice>541-757-0687</cntvoice>
+				<cntaddr>
+					<country>USA</country>
+					<postal>97333</postal>
+					<state>OR</state>
+					<city>Corvallis</city>
+					<address>136 SW Washington Ave, Suite 202</address>
+					<addrtype>physical address</addrtype>
+				</cntaddr>
+				<cntperp>
+					<cntper>Data Basin Administrator</cntper>
+					<cntorg>Data Basin</cntorg>
+				</cntperp>
+			</cntinfo>
+		</distrib>
+	</distinfo>
+	<idinfo>
+		<keywords>
+			<theme>
+				<themekey>aliquot,polygon,suitability,washington,offshore,renewable,annual,boem,energy,eez,ocean,oregon,wind,california</themekey>
+			</theme>
+		</keywords>
+		<useconst>This work is licensed under a  Creative Commons Attribution-NonCommercial 3.0 License .</useconst>
+		<spdom>
+			<bounding>
+				<southbc>4223667.013510608</southbc>
+				<northbc>4270513.237771123</northbc>
+				<eastbc>-13519383.561600167</eastbc>
+				<westbc>-13595151.66463406</westbc>
+			</bounding>
+		</spdom>
+		<datacred>Bureau of Ocean Energy ManagementFrank Pendleton: Frank.Pendleton@boem.govCenter for Geospatial Science and Technology, CSU NorthridgeDanielle Bram: danielle.bram@csun.eduhttps://csun.edu/cgst</datacred>
+		<descript>
+			<purpose>The Bureau of Ocean Energy Management (BOEM) collaborated with the Center for Geospatial Science and Technology (CGST) from 2020 to 2021 to generate a series of processed datasets to aid in renewable energy planning. Several variables important to offshore wind planning were summarized including wind speed, depth, slope, distance to shore etc. Datasets were summarized by BOEM aliquots, a 1200x1200 meter grid, covering the California, Oregon, and Washington coasts. In addition to a set of summarized attributes at the Aliquot Grid level, additional data deliverables were produced, such as processed reference data. All work was conducted in close cooperation with BOEM staff.</purpose>
+			<abstract>BOEM - Morro Bay Call Area Extensions</abstract>
+		</descript>
+		<citation>
+			<citeinfo>
+				<origin>Bureau of Ocean Energy ManagementFrank Pendleton: Frank.Pendleton@boem.govCenter for Geospatial Science and Technology</origin>
+				<origin>CSU NorthridgeDanielle Bram: danielle.bram@csun.eduhttps://csun.edu/cgst</origin>
+				<onlink>https://databasin.org/datasets/03224aeb47394729a064a5d35c097b4a/</onlink>
+				<title>Morro Bay Call Area Extensions_05252021</title>
+			</citeinfo>
+		</citation>
+	</idinfo>
+	<Esri>
+		<CreaDate>20210527</CreaDate>
+		<CreaTime>17502100</CreaTime>
+		<SyncOnce>TRUE</SyncOnce>
+		<DataProperties>
+			<itemProps>
+				<itemLocation>
+					<linkage Sync="TRUE">file://C:\windows\temp\tmpkpy65e\03224aeb47394729a064a5d35c097b4a\commondata\morrobay-399sqmi-area\MorroBay_399SqMi_Sections_2021_05_25</linkage>
+					<protocol Sync="TRUE">Local Area Network</protocol>
+				</itemLocation>
+			</itemProps>
+			<copyHistory>
+				<copy source="C:\windows\temp\tmpkpy65e\commondata\morrobay-399sqmi-area\MorroBay_399SqMi_Sections_2021_05_25" dest="C:\windows\temp\tmpkpy65e\03224aeb47394729a064a5d35c097b4a\commondata\morrobay-399sqmi-area\MorroBay_399SqMi_Sections_2021_05_25" date="20210527" time="17502100"/>
+			</copyHistory>
+		</DataProperties>
+	</Esri>
+</metadata>
