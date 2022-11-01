@@ -30,8 +30,12 @@ with_drive_quiet({
 #     drive_upload(db, path=gdriveDest, overwrite = TRUE)
 })
 cat('\nChecking for GPS CSV updates...')
-updateGpsCsv(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2')
+updateGpsCsv(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2', dataPath='PlottingData')
 # current 2=RTOFSNOWCAST, 4=HYCOM, 3=HFRADAR
+cat('\nUpdating sanctuary summary...')
+sanctSumm <- createSanctSummary(db, 'PlottingData')
+write.csv(sanctSumm, file='SanctuarySummary.csv', row.names = FALSE)
+doGdriveUpload('SanctuarySummary.csv', gdriveDest)
 useCurrent <- 4
 cat('\nMaking individual drift plots...')
 # now doing both hycom and hfradar for deployed plots
@@ -45,8 +49,11 @@ noPlot <- c('ADRIFT_004', 'ADRIFT_008')
 
 recentDrifts <- getDbDeployment(db, days=14, verbose=FALSE)
 recentDrifts <- recentDrifts[!(recentDrifts$DriftName %in% noPlot), ]
-twoWeekPlot <- plotAPIDrift(recentDrifts, filename='./DriftPlots/Last14Days.png', current=FALSE)
-
+if(nrow(recentDrifts) > 0) {
+    twoWeekPlot <- plotAPIDrift(recentDrifts, filename='./DriftPlots/Last14Days.png', current=FALSE)
+} else {
+    twoWeekPlot <- NULL
+}
 cat('\nMaking test deployment worksheet plots...')
 testDepPlots <- plotTestDeployments(current=4, driftData=getDbDeployment(db, verbose=FALSE), outDir = './TestDeploymentPlots/')
 testDepPlots <- c(testDepPlots,

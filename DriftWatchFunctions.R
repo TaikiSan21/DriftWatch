@@ -355,20 +355,38 @@ getDbGps <- function(db, days=NULL) {
     filter(gps, UTC >= (now - days * 24 * 3600))
 }
 
-getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
+getDeploymentData <- function(db) {
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
-    gps <- dbReadTable(con, 'gpsData')
-    gps$UTC <- pgDateToPosix(gps$UTC)
     deployment <- dbReadTable(con, 'deploymentData')
     # browser()
     deployment$Start <- pgDateToPosix(deployment$Start)
     deployment$End <- pgDateToPosix(deployment$End)
     deployment$DataStart <- pgDateToPosix(deployment$DataStart)
     deployment$DataEnd <- pgDateToPosix(deployment$DataEnd)
+    deployment
+}
+
+allZero <- function(x) {
+    if(is.na(x)) {
+        return(TRUE)
+    }
+    hour(x) == 0 &&
+        minute(x) == 0 &&
+        second(x) == 0
+}
+
+getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
+    con <- dbConnect(db, drv=SQLite())
+    on.exit(dbDisconnect(con))
+    gps <- dbReadTable(con, 'gpsData')
+    gps$UTC <- pgDateToPosix(gps$UTC)
+    deployment <- getDeploymentData(db)
     if(!is.null(drift)) {
         deployment <- deployment[deployment$DriftName %in% drift, ]
     }
+    noStart <- is.na(deployment$Start)
+    deployment <- deployment[!noStart, ]
     if(is.null(deployment) ||
        nrow(deployment) == 0) {
         return(NULL)
@@ -378,7 +396,7 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
     }
     allGps <- bind_rows(lapply(deployment$DriftName, function(x) {
         thisDep <- deployment[deployment$DriftName == x, ]
-        if(all(c(hour(thisDep$End), minute(thisDep$End), second(thisDep$End)) == 0)) {
+        if(allZero(thisDep$End)) {
             thisDep$End <- thisDep$End + 24*3600 - 1
         }
         thisGps <- gps[gps$DeviceName %in% gsub(' ', '', strsplit(thisDep$DeviceName, ',')[[1]]), ]
@@ -472,7 +490,7 @@ dropBySpeed <- function(x, knots=4) {
 }
 
 plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE, sl=TRUE, wca=TRUE,
-                         current=4, wind=FALSE, swell=FALSE, wave=FALSE, depth=0, time=nowUTC(),
+                         nms=FALSE, current=4, wind=FALSE, swell=FALSE, wave=FALSE, depth=0, time=nowUTC(),
                          size = 4, xlim=1, ylim=.5, labelBy='DriftName', title=NULL,
                          dataPath='.') {
     if(is.null(etopo)) {
@@ -573,6 +591,13 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
         windCall <- readRDS(file.path(dataPath, 'WindCallBoundary.RData'))
         # windCall <- readRDS('../Data/SPOTXML/WindCallBoundary.RData')
         plot(windCall$geometry, add=TRUE, border='purple', lwd=2)
+    }
+    # national marine sanctuaries
+    if(nms) {
+        nmsFiles <- list.files(dataPath, pattern='NMS', full.names=TRUE)
+        nmsData <- lapply(nmsFiles, readRDS)
+        nmsData <- do.call('c', lapply(nmsData, function(n) n$geometry))
+        plot(nmsData, add=TRUE, border='blue', lwd=2)
     }
     # this looks weird but converting numeric to logical with !!
     if(sum(!!(c(current, wind, swell, wave))) > 1) {
@@ -1447,8 +1472,8 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
         drive_download(sheetId, path='deployDetails', overwrite = TRUE)
     })
     # cat('\nReading XL sheets')
-    depDet <- read_xlsx('deployDetails.xlsx', sheet=2, col_types = 'list')
-    newDep <- read_xlsx('deployDetails.xlsx', sheet=3, col_types ='list')
+    depDet <- read_xlsx('deployDetails.xlsx', sheet='deployDetails', col_types = 'list')
+    newDep <- read_xlsx('deployDetails.xlsx', sheet='NEW DEPLOYMENT TO SAVE', col_types ='list')
     
     # GPS archive if needed
     newDep <- sheetToDbDepFormat(newDep, new=TRUE)
@@ -1633,7 +1658,7 @@ getLastUpdate <- function(x, last=2, gpsFmt='dms', toLocal = TRUE) {
     list(drift=x$DriftName[1], position=position, direction=round(direction %% 360, 0), speed=round(dist / time / 1.852, 2), date=date)
 }
 
-updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2') {
+updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2', dataPath='.') {
     id <- as_id(id)
     csvs <- drive_ls(id)$name
     # csvs <- list.files(csvDir, pattern='csv$', full.names=TRUE)
@@ -1648,10 +1673,45 @@ updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOis
         if(nrow(thisGps) == 0) next
         cat('\nWriting GPS CSV for drift', d, '...')
         thisFile <- file.path(csvDir, paste0(d, '_GPS'))
-        plotAPIDrift(thisGps, current=FALSE, wca=FALSE, bathy=TRUE, sl=FALSE, xlim=.3, ylim=.3,
-                     filename=paste0(thisFile, '.png'))
+        plotAPIDrift(thisGps, current=FALSE, wca=FALSE, bathy=TRUE, sl=FALSE, nms=TRUE, xlim=.3, ylim=.3,
+                     filename=paste0(thisFile, '.png'), dataPath=dataPath)
         write.csv(thisGps, file = paste0(thisFile, '.csv'), row.names = FALSE)
         drive_upload(paste0(thisFile, '.csv'), path=id)
         drive_upload(paste0(thisFile, '.png'), path=id)
     }
+}
+
+checkNMS <- function(gps, nmsData) {
+    # nmsFiles <- list.files(nmsFolder, pattern='NMS', full.names=TRUE)
+    # nmsData <- lapply(nmsFiles, readRDS)
+    # names(nmsData) <- gsub('([A-z]NMS).*', '\\1', basename(nmsFiles))
+    gps <- st_sfc(st_multipoint(matrix(c(gps$Longitude, gps$Latitude), ncol=2)))
+    st_crs(gps) <- 4326
+    nmsInt <- unlist(lapply(nmsData, function(x) {
+        ints <- unlist(st_intersects(x, gps))
+        length(unlist(ints)) > 0
+    }))
+    if(!any(nmsInt)) {
+        return('No NMS entered')
+    }
+    names(nmsData)[nmsInt]
+}
+
+createSanctSummary <- function(db, nmsFolder) {
+    nmsFiles <- list.files(nmsFolder, pattern='NMS', full.names=TRUE)
+    nmsData <- lapply(nmsFiles, readRDS)
+    names(nmsData) <- gsub('([A-z]NMS).*', '\\1', basename(nmsFiles))
+    depData <- getDeploymentData(db)
+    depData <- depData[c('Start', 'End', 'DriftName')]
+    colnames(depData) <- c('DriftStart', 'DriftEnd', 'DriftName')
+    depData$Sanctuaries <- 'Start or End times not updated'
+    for(i in 1:nrow(depData)) {
+        if(allZero(depData$DriftStart[i]) || allZero(depData$DriftEnd[i])) {
+            next
+        }
+        depData$Sanctuaries[i] <- paste0(
+            checkNMS(getDbDeployment(db, drift=depData$DriftName[i]), nmsData),
+            collapse = ', ')
+    }
+    depData
 }
