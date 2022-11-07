@@ -780,6 +780,7 @@ plotArrowGrid <- function(xLim, yLim, diff=NULL, nc, xyVars, depth=0, time=nowUT
     # browser()
     llg <- makeLatLongGrid(xLim, yLim, diff[1], diff[2], depth, time=time)
     diff <- diff * scale
+
     llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE)
     llg <- PAMmisc:::to180(llg)
     varNames <- paste0(xyVars, '_mean')

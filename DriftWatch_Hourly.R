@@ -27,7 +27,7 @@ db <- 'SPOTGPS_Logger.sqlite3'
 # cat('\nUploading DB to gdrive...')
 with_drive_quiet({
     drive_auth(email='taiki.sakai@noaa.gov')
-#     drive_upload(db, path=gdriveDest, overwrite = TRUE)
+    #     drive_upload(db, path=gdriveDest, overwrite = TRUE)
 })
 cat('\nChecking for GPS CSV updates...')
 updateGpsCsv(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2', dataPath='PlottingData')
@@ -39,10 +39,27 @@ doGdriveUpload('SanctuarySummary.csv', gdriveDest)
 useCurrent <- 4
 cat('\nMaking individual drift plots...')
 # now doing both hycom and hfradar for deployed plots
-driftPlots <- doDriftPlots(db, verbose=T, current=4, outDir='./DriftPlots/')
-driftPlots <- c(driftPlots,
-                doDriftPlots(db, verbose=T, current=3, outDir = './DriftPlots/'))
+hycomOK <- updateNc(file='HYCOMGLBycurrent.nc', id=PAMmisc::getEdinfo()[['HYCOM']], vars=c(F, F, F, T, T))
+hfradarOK <- updateNc(file='HFRADARcurrent.nc', id='ucsdHfrW6', vars=c(T, T, rep(F, 5)))
 
+if(file.size('HYCOMGLBycurrent.nc') < 1e3) {
+    cat('\nWARNING: Problem with downloading HYCOM data')
+    hycomOK <- FALSE
+}
+
+if(file.size('HFRADARcurrent.nc') < 1e3) {
+    cat('\nWARNING: Problem with downloading HFRADAR data')
+    hfradarOK <- FALSE
+}
+
+driftPlots <- character(0)
+if(hycomOK) {
+    driftPlots <- doDriftPlots(db, verbose=T, current=4, outDir='./DriftPlots/')
+}
+if(hfradarOK) {
+    driftPlots <- c(driftPlots,
+                    doDriftPlots(db, verbose=T, current=3, outDir = './DriftPlots/'))
+}
 cat('\nMaking last 2 weeks plot...')
 
 noPlot <- c('ADRIFT_004', 'ADRIFT_008')
@@ -55,9 +72,14 @@ if(nrow(recentDrifts) > 0) {
     twoWeekPlot <- NULL
 }
 cat('\nMaking test deployment worksheet plots...')
-testDepPlots <- plotTestDeployments(current=4, driftData=getDbDeployment(db, verbose=FALSE), outDir = './TestDeploymentPlots/')
-testDepPlots <- c(testDepPlots,
-                  plotTestDeployments(current=3, driftData=getDbDeployment(db, verbose=FALSE), outDir = './TestDeploymentPlots/'))
+testDepPlots <- character(0)
+if(hycomOK) {
+    testDepPlots <- plotTestDeployments(current=4, driftData=getDbDeployment(db, verbose=FALSE), outDir = './TestDeploymentPlots/')
+}
+if(hfradarOK) {
+    testDepPlots <- c(testDepPlots,
+                      plotTestDeployments(current=3, driftData=getDbDeployment(db, verbose=FALSE), outDir = './TestDeploymentPlots/'))
+}
 # cat('\nMaking CCC plots...')
 # ccc <- getDbDeployment(db, drift=paste0('ADRIFT_0', 19:26))
 # cccPlotHYCOM <- plotAPIDrift(ccc, filename = 'AllCCC_HYCOM.png', current=4)
