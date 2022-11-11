@@ -17,6 +17,7 @@ suppressPackageStartupMessages({
     library(rjson)
     library(readxl)
     library(lubridate)
+    library(yaml)
 })
 # Updated 1-19-22 post collapse v 1.0
 # Updated 2-7-2022 fkin etopos
@@ -24,11 +25,15 @@ suppressPackageStartupMessages({
 # Updated 6-10-2022 Trying to sort out crashes on first load of the day and custom plots on test dep sheet
 # Updated 6-14-2022 DB now has Lonestar names instead of dumb ID
 # Updated 9-22-2022 To do GPS CSV. Also moved GPS downloads to 30 minutes w/texting
+
+# this stores api keys and PWs for things - not to be shared
+secrets <- read_yaml('.secrets/secrets.yaml')
 thisVersion <- function() {
     '1.5'
 }
 
-getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1) {
+getSpotAPIData <- function(id='', db, start=1) {
+    id <- secrets$spot_key
     call <- makeSpotCall(id, where=start)
     xml <- try(read_xml(call))
     if(inherits(xml, 'try-error')) {
@@ -42,7 +47,8 @@ getSpotAPIData <- function(id='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, start=1) 
 }
 
 
-getLonestarAPIData <- function(key='f22e32e6ba5953978f0875c86f07c5ffae24b2bc', db, start=NULL, days=30) {
+getLonestarAPIData <- function(key='', db, start=NULL, days=30) {
+    key <- secrets$lonestar_key
     if(is.null(start)) {
         start <- nowUTC() - days * 24 * 3600
     }
@@ -189,7 +195,7 @@ getAPIData <- function(x, db, source=c('spot', 'lonestar'), progress=FALSE) {
 }
 
 # x is key or id for API
-addAPIToDb <- function(x='09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys', db, source=c('spot', 'lonestar')) {
+addAPIToDb <- function(x='', db, source=c('spot', 'lonestar')) {
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
     dbDf <- dbReadTable(con, 'gpsData')
@@ -402,17 +408,17 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
         thisGps <- gps[gps$DeviceName %in% gsub(' ', '', strsplit(thisDep$DeviceName, ',')[[1]]), ]
         thisGps <- thisGps[thisGps$UTC >= thisDep$Start &
                                thisGps$UTC <= thisDep$End, ]
-        thisGps$recordingEffort <- FALSE
-        if(!is.na(thisDep$DataStart) &&
-           !is.na(thisDep$DataEnd)) {
-            thisGps$recordingEffort <- thisGps$UTC >= thisDep$DataStart &
-                thisGps$UTC <= thisDep$DataEnd
-        }
         if(nrow(thisGps) == 0) {
             if(verbose) {
                 cat('\nNo data in database for drift', x)
             }
             return(NULL)
+        }
+        thisGps$recordingEffort <- FALSE
+        if(!is.na(thisDep$DataStart) &&
+           !is.na(thisDep$DataEnd)) {
+            thisGps$recordingEffort <- thisGps$UTC >= thisDep$DataStart &
+                thisGps$UTC <= thisDep$DataEnd
         }
         thisGps <- dropBySpeed(thisGps, knots=4)
         thisGps <- arrange(thisGps, UTC)
@@ -885,6 +891,7 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     tryCatch({
         cat('Downloading file', file, '...\n')
         downloadEnv(rangeDf, edi, fileName=file, buffer=c(.1, .1, 0), progress = FALSE)
+        TRUE
     },
     error = function(e) {
         if(isTRUE(rerun)) {
@@ -1085,275 +1092,272 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
     outFiles
 }
 
-addToGps <- function(x, maxSpeed = 4 / 3.6) {
-    if(is.null(x) ||
-       nrow(x) == 0) {
-        return(x)
-    }
-    if(nrow(x) == 1) {
-        x$Distance <- NA
-        x$Speed <- NA
-        x$Bearing <- NA
-        return(x)
-    }
-    x <- arrange(x, UTC)
-    timeDiff <- as.numeric(difftime(x$UTC[2:(nrow(x))], x$UTC[1:(nrow(x)-1)], units='secs'))
-    distance <- distGeo(cbind(x$Longitude[1:(nrow(x)-1)], x$Latitude[1:(nrow(x)-1)]),
-                        cbind(x$Longitude[2:(nrow(x))], x$Latitude[2:(nrow(x))]))
-    x$Distance <- c(distance, 0)
-    x$Speed <- c(distance / timeDiff, 0)
-    tooFast <- x$Speed > maxSpeed
-    if(any(tooFast)) {
-        return(addToGps(x[!tooFast,], maxSpeed))
-    }
-    bearing <- bearing(cbind(x$Longitude[1:(nrow(x)-1)], x$Latitude[1:(nrow(x)-1)]),
-                       cbind(x$Longitude[2:(nrow(x))], x$Latitude[2:(nrow(x))]))
-    x$Bearing <- c(bearing %% 360, NA)
-    x
-}
+# addToGps <- function(x, maxSpeed = 4 / 3.6) {
+#     if(is.null(x) ||
+#        nrow(x) == 0) {
+#         return(x)
+#     }
+#     if(nrow(x) == 1) {
+#         x$Distance <- NA
+#         x$Speed <- NA
+#         x$Bearing <- NA
+#         return(x)
+#     }
+#     x <- arrange(x, UTC)
+#     timeDiff <- as.numeric(difftime(x$UTC[2:(nrow(x))], x$UTC[1:(nrow(x)-1)], units='secs'))
+#     distance <- distGeo(cbind(x$Longitude[1:(nrow(x)-1)], x$Latitude[1:(nrow(x)-1)]),
+#                         cbind(x$Longitude[2:(nrow(x))], x$Latitude[2:(nrow(x))]))
+#     x$Distance <- c(distance, 0)
+#     x$Speed <- c(distance / timeDiff, 0)
+#     tooFast <- x$Speed > maxSpeed
+#     if(any(tooFast)) {
+#         return(addToGps(x[!tooFast,], maxSpeed))
+#     }
+#     bearing <- bearing(cbind(x$Longitude[1:(nrow(x)-1)], x$Latitude[1:(nrow(x)-1)]),
+#                        cbind(x$Longitude[2:(nrow(x))], x$Latitude[2:(nrow(x))]))
+#     x$Bearing <- c(bearing %% 360, NA)
+#     x
+# }
 
-plotAnneDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE, sl=TRUE, wca=TRUE,
-                          current=FALSE, wind=FALSE, swell=FALSE, wave=FALSE, depth=0, time=nowUTC(),
-                          size = 4, xlim=1, ylim=.5, labelBy='DriftName', title=NULL,
-                          dataPath='../Data/SPOTXML',
-                          pal = 'Set2') {
-    if(is.null(etopo)) {
-        etopo <- tempfile()
-    } else {
-        etopo <- file.path(dataPath, etopo)
-    }
-    if(!file.exists(etopo)) {
-        edi <- erddapToEdinfo('etopo180', chooseVars = FALSE)
-        edi <- varSelect(edi, TRUE)
-        etopo <- downloadEnv(drift, edinfo=edi, fileName = etopo, buffer=c(1, 1, 0))
-    }
-    rangeDf <- makeRangeDf()
-    if(is.null(xlim)) {
-        xlim <- range(drift$Longitude)
-    }
-    if(is.null(ylim)) {
-        ylim <- range(drift$Latitude)
-    }
-    if(length(xlim) == 1) {
-        xlim <- range(drift$Longitude) + c(-1, 1) * xlim
-    }
-    if(length(ylim) == 1) {
-        ylim <- range(drift$Latitude) + c(-1, 1) * ylim
-    }
-    xlim[1] <- max(c(xlim[1], rangeDf$Longitude[1]))
-    xlim[2] <- min(c(xlim[2], rangeDf$Longitude[2]))
-    ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
-    ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
-    
-    bathyData <- as.bathy(raster(etopo))
-    # browser()
-    bathyData <- try(subsetBathy(bathyData, x=xlim, y=ylim, locator = FALSE), silent=TRUE)
-    if(inherits(bathyData, 'try-error')) {
-        return(plotAnneDrift(drift, etopo=NULL, filename, bathy, sl, wca, current,
-                             wind, swell, wave, depth,time, size, xlim, ylim, labelBy, title, dataPath, pal))
-    }
-    wid <- nrow(bathyData)
-    xmar <- 1.24
-    ht <- ncol(bathyData)
-    ymar <- 1.84
-    if(wid <= ht) {
-        width <- size
-        height <- size * ht / wid
-    } else {
-        height <- size
-        width <- size * wid / ht
-    }
-    if(!is.null(filename)) {
-        tryOpen <- suppressWarnings(try(
-            png(filename, height = height + ymar, width = width + xmar, units='in',res=300)
-        ))
-        if(inherits(tryOpen, 'try-error')) {
-            warning('Unable to create image "', filename, '", file appears to be open already')
-            return(NULL)
-        }
-        on.exit(dev.off())
-    }
-    # Setting up bathy data and legend
-    if(bathy) {
-        depthPal <- list(c(0, max(bathyData), grey(.7), grey(.9), grey(.95)),
-                         c(min(bathyData), 0, "darkblue", "lightblue"))
-        bVals <- round(seq(from=0, to=abs(min(bathyData)), length.out=7), 0)
-        bVals[c(2,4,6)] <- NA
-        bCols <- colorRampPalette(c('lightblue', 'darkblue'))(7)
-    } else {
-        depthPal <- list(c(0, max(bathyData), grey(.7), grey(.9), grey(.95)),
-                         c(min(bathyData), -200, "skyblue1", 'skyblue1'),
-                         c(-200, 0,"lightblue", "lightblue"))
-        bVals <- round(c(0, NA, 200, NA, abs(min(bathyData))), 0)
-        bCols <- c(rep('lightblue', 3), rep('skyblue1', 2))
-    }
-    
-    plot(bathyData, image = TRUE, land = TRUE, axes = T, lwd=0.3,
-         bpal = depthPal, lty=1,
-         shallowest.isobath=-100, deepest.isobath=-200, step=100, drawlabels=T)
-    title(main=title)
-    # SHipping lanes
-    if(sl) {
-        shipLanes <- readRDS(file.path(dataPath, 'ShippingLaneCA.RData'))
-        # shipLanes <- readRDS('../Data/SPOTXML/ShippingLaneCA.RData')
-        plot(shipLanes$geometry, add=TRUE, border='orange', lwd=2)
-    }
-    # Wind Call Areas
-    if(wca) {
-        windCall <- readRDS(file.path(dataPath, 'WindCallBoundary.RData'))
-        # windCall <- readRDS('../Data/SPOTXML/WindCallBoundary.RData')
-        plot(windCall$geometry, add=TRUE, border='purple', lwd=2)
-    }
-    mbnms <- readRDS(file.path(dataPath, 'MBNMS_Bounds.rda'))
-    plot(mbnms$geometry, add=TRUE, border='blue', lwd=1)
-    gfnms <- readRDS(file.path(dataPath, 'GFNMS_Bounds.rda'))
-    plot(gfnms$geometry, add=TRUE, border='blue', lwd=1)
-    # cinms <- readRDS(file.path(dataPath, 'CINMS_Bounds.rda'))
-    # plot(cinms$geometry, add=TRUE, border='blue', lwd=1)
-    cbnms <- readRDS(file.path(dataPath, 'CBNMS_Bounds.rda'))
-    plot(cbnms$geometry, add=TRUE, border='blue', lwd=1)
-    # this looks weird but converting numeric to logical with !!
-    if(sum(!!(c(current, wind, swell, wave))) > 1) {
-        warning('Recommended to only plot one kind of arrow data at a time')
-    }
-    # Current data
-    if(current) {
-        switch(current,
-               '1' = {
-                   currentNc <- file.path(dataPath, 'RTOFSForecurrent.nc')
-                   edi <- 'ncepRtofsG3DForeDaily_LonPM180'
-                   curVar <- c(F, F, T, T)
-                   radial <- FALSE
-                   xyVars <- c('u', 'v')
-               },
-               '2' = {
-                   currentNc <- file.path(dataPath, 'RTOFSNowcurrent.nc')
-                   edi <- 'ncepRtofsG3DNowDaily_LonPM180'
-                   curVar <- c(F, F, T, T)
-                   xyVars <- c('u', 'v')
-                   radial <- FALSE
-               },
-               '3' = {
-                   currentNc <- file.path(dataPath, 'HFRADARcurrent.nc')
-                   edi <- 'ucsdHfrW6'
-                   curVar <- c(T, T, rep(F, 5))
-                   xyVars <- c('water_u', 'water_v')
-                   radial=FALSE
-               },
-               '4' = {
-                   currentNc <- file.path(dataPath, 'HYCOMGLBycurrent.nc')
-                   edi <- PAMmisc::getEdinfo()[[2]]
-                   curVar <- c(F, F, F, T, T)
-                   xyVars <- c('water_u', 'water_v')
-                   radial <- FALSE
-               },
-               '5' = {
-                   currentNc <- file.path(dataPath, 'RTOFSNowcurrent6hour.nc')
-                   curVar <- c(F, F, T, T)
-                   xyVars <- c('u', 'v')
-                   radial <- FALSE
-                   edi <- 'ncepRtofsG3DNow6hrlyR2'
-               }
-        )
-        
-        updateNc(currentNc, edi, vars=curVar)
-        curLeg <- plotArrowGrid(xLim=xlim, yLim=ylim, diff=NULL, nc=currentNc,
-                                xyVars = xyVars, depth=depth, time=time,
-                                width=width, radial=radial)
-        
-        curLeg$vals <- round(curLeg$vals * 1.94384, 2)
-        title(sub = paste0('Current data as of ', curLeg$time, ' UTC'))
-        # ucsdHfrW1
-        # water_u/v
-        
-    }
-    # Wind data
-    if(wind) {
-        windNc <- file.path(dataPath, 'Metopwind.nc')
-        updateNc(windNc, 'erdQMwind1day_LonPM180', vars=c(T, T))
-        wndLeg <- plotArrowGrid(xLim = xlim, yLim=ylim, diff=NULL, nc=windNc,
-                                xyVars = c('x_wind', 'y_wind'), width=width, radial=FALSE)
-    }
-    # Swell data
-    if(swell) {
-        swellNc <- file.path(dataPath, 'WW3wave.nc')
-        updateNc(swellNc, 'ww3_global', vars=c(T, F, T, T, F, T, F, F, F))
-        swLeg <- plotArrowGrid(xLim = xlim, yLim=ylim, diff=NULL, nc=swellNc,
-                               xyVars = c('shgt', 'sdir'), width=width,
-                               radial=TRUE, cart=FALSE, dirFrom=TRUE)
-    }
-    # Wave heigh data
-    if(wave) {
-        waveNc <- file.path(dataPath, 'WW3wave.nc')
-        updateNc(waveNc, 'ww3_global', vars=c(T, F, T, T, F, T, F, F, F))
-        wvLeg <- plotArrowGrid(xLim = xlim, yLim=ylim, diff=NULL, nc=waveNc,
-                               xyVars = c('Thgt', 'Tdir'), width=width,
-                               radial=TRUE, cart=FALSE, dirFrom=TRUE)
-    }
-    
-    # Plotting drift and start/end points
-    symbs <- c(48:57, 35:38, 61:64, 131, 132, 163, 165, 167, 169, 171, 174, 97:122)
-    mapLabs <- (49:57)[as.numeric(gsub('ADRIFT_00', '', unique(drift[[labelBy]])))]
-    nColors <- length(unique(drift[[labelBy]]))
-    colPal <- brewer.pal(nColors, pal)
-    for(d in seq_along(unique(drift[[labelBy]]))) {
-        thisDrift <- drift[drift[[labelBy]] == unique(drift[[labelBy]])[d], ]
-        if(nrow(thisDrift) == 1) next
-        start <- which.min(thisDrift$UTC)
-        thisDrift <- arrange(thisDrift, UTC)
-        lines(x=thisDrift$Longitude, y=thisDrift$Latitude, col='black', lwd=2)
-        lines(x=thisDrift$Longitude, y=thisDrift$Latitude, col=colPal[d], lwd=1, lty=1)
-        # start/end markers
-        points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=15, cex=1.3, col='black')
-        points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=15, cex=1.2, col=colPal[d])
-        end <- which.max(thisDrift$UTC)
-        points(x=thisDrift$Longitude[end], thisDrift$Latitude[end], pch=17, col='black', cex=1.3)
-        points(x=thisDrift$Longitude[end], thisDrift$Latitude[end], pch=17, col=colPal[d], cex=1.2)
-        # labels
-        points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=mapLabs[d], col='black', cex=.6)
-        points(x=thisDrift$Longitude[end], y=thisDrift$Latitude[end], pch=mapLabs[d], col='black', cex=.6)
-    }
-    
-    # Plot port cities and other POI
-    text(x=poiDf$Longitude, y=poiDf$Latitude, labels=poiDf$Name, cex=.6, srt=30, adj=c(-.1, .5))
-    points(x=poiDf$Longitude, y=poiDf$Latitude, cex=.5, pch=16)
-    
-    # Legendary
-    # browser()
-    lastLegend <- legend(x='topright', legend=c('Deployment', 'Recovery'),
-                         col=c('black', 'black'), pch=c(15, 17), merge=FALSE,
-                         seg.len = 1, cex=1, plot=FALSE)
-    useCex <- min(.2 * diff(xlim) / lastLegend$rect$w, 1)
-    lastLegend <- legend(x='topright', legend=c('Deployment', 'Recovery'),
-                         col=c('black', 'black'), pch=c(15, 17), merge=FALSE,
-                         seg.len = 1, cex=useCex)
-    if(current) {
-        lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=curLeg$vals, cols=curLeg$colors,
-                                    title='Current (Knots)', cex=useCex, tCex=.67)
-    }
-    if(wind) {
-        lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=wndLeg$vals, cols=wndLeg$colors,
-                                    title='Wind Speed (m/s)', cex=useCex, tCex=.67)
-    }
-    if(swell) {
-        lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=swLeg$vals, cols=swLeg$colors,
-                                    title='Swell Size (m)', cex=useCex, tCex=.67)
-    }
-    if(wave) {
-        lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=wvLeg$vals, cols=wvLeg$colors,
-                                    title='Wave Height (m)', cex=useCex, tCex=.67)
-    }
-    
-    if(bathy) {
-        # lastLegend <- myGradLegend(lastLeg=lastLegend, vals=bVals, cols=bCols,
-        #                            title='      Depth (m)', cex=useCex, tCex=.67)
-    }
-    
-    myScaleBathy(bathyData, deg=diff(xlim) * .2, x= 'bottomleft', inset=5, col='white')
-}
-
-# Spot: jaybarlow33 // 3Spot99-1
-# SpotAPI : 09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys
+# plotAnneDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE, sl=TRUE, wca=TRUE,
+#                           current=FALSE, wind=FALSE, swell=FALSE, wave=FALSE, depth=0, time=nowUTC(),
+#                           size = 4, xlim=1, ylim=.5, labelBy='DriftName', title=NULL,
+#                           dataPath='../Data/SPOTXML',
+#                           pal = 'Set2') {
+#     if(is.null(etopo)) {
+#         etopo <- tempfile()
+#     } else {
+#         etopo <- file.path(dataPath, etopo)
+#     }
+#     if(!file.exists(etopo)) {
+#         edi <- erddapToEdinfo('etopo180', chooseVars = FALSE)
+#         edi <- varSelect(edi, TRUE)
+#         etopo <- downloadEnv(drift, edinfo=edi, fileName = etopo, buffer=c(1, 1, 0))
+#     }
+#     rangeDf <- makeRangeDf()
+#     if(is.null(xlim)) {
+#         xlim <- range(drift$Longitude)
+#     }
+#     if(is.null(ylim)) {
+#         ylim <- range(drift$Latitude)
+#     }
+#     if(length(xlim) == 1) {
+#         xlim <- range(drift$Longitude) + c(-1, 1) * xlim
+#     }
+#     if(length(ylim) == 1) {
+#         ylim <- range(drift$Latitude) + c(-1, 1) * ylim
+#     }
+#     xlim[1] <- max(c(xlim[1], rangeDf$Longitude[1]))
+#     xlim[2] <- min(c(xlim[2], rangeDf$Longitude[2]))
+#     ylim[1] <- max(c(ylim[1], rangeDf$Latitude[1]))
+#     ylim[2] <- min(c(ylim[2], rangeDf$Latitude[2]))
+#     
+#     bathyData <- as.bathy(raster(etopo))
+#     # browser()
+#     bathyData <- try(subsetBathy(bathyData, x=xlim, y=ylim, locator = FALSE), silent=TRUE)
+#     if(inherits(bathyData, 'try-error')) {
+#         return(plotAnneDrift(drift, etopo=NULL, filename, bathy, sl, wca, current,
+#                              wind, swell, wave, depth,time, size, xlim, ylim, labelBy, title, dataPath, pal))
+#     }
+#     wid <- nrow(bathyData)
+#     xmar <- 1.24
+#     ht <- ncol(bathyData)
+#     ymar <- 1.84
+#     if(wid <= ht) {
+#         width <- size
+#         height <- size * ht / wid
+#     } else {
+#         height <- size
+#         width <- size * wid / ht
+#     }
+#     if(!is.null(filename)) {
+#         tryOpen <- suppressWarnings(try(
+#             png(filename, height = height + ymar, width = width + xmar, units='in',res=300)
+#         ))
+#         if(inherits(tryOpen, 'try-error')) {
+#             warning('Unable to create image "', filename, '", file appears to be open already')
+#             return(NULL)
+#         }
+#         on.exit(dev.off())
+#     }
+#     # Setting up bathy data and legend
+#     if(bathy) {
+#         depthPal <- list(c(0, max(bathyData), grey(.7), grey(.9), grey(.95)),
+#                          c(min(bathyData), 0, "darkblue", "lightblue"))
+#         bVals <- round(seq(from=0, to=abs(min(bathyData)), length.out=7), 0)
+#         bVals[c(2,4,6)] <- NA
+#         bCols <- colorRampPalette(c('lightblue', 'darkblue'))(7)
+#     } else {
+#         depthPal <- list(c(0, max(bathyData), grey(.7), grey(.9), grey(.95)),
+#                          c(min(bathyData), -200, "skyblue1", 'skyblue1'),
+#                          c(-200, 0,"lightblue", "lightblue"))
+#         bVals <- round(c(0, NA, 200, NA, abs(min(bathyData))), 0)
+#         bCols <- c(rep('lightblue', 3), rep('skyblue1', 2))
+#     }
+#     
+#     plot(bathyData, image = TRUE, land = TRUE, axes = T, lwd=0.3,
+#          bpal = depthPal, lty=1,
+#          shallowest.isobath=-100, deepest.isobath=-200, step=100, drawlabels=T)
+#     title(main=title)
+#     # SHipping lanes
+#     if(sl) {
+#         shipLanes <- readRDS(file.path(dataPath, 'ShippingLaneCA.RData'))
+#         # shipLanes <- readRDS('../Data/SPOTXML/ShippingLaneCA.RData')
+#         plot(shipLanes$geometry, add=TRUE, border='orange', lwd=2)
+#     }
+#     # Wind Call Areas
+#     if(wca) {
+#         windCall <- readRDS(file.path(dataPath, 'WindCallBoundary.RData'))
+#         # windCall <- readRDS('../Data/SPOTXML/WindCallBoundary.RData')
+#         plot(windCall$geometry, add=TRUE, border='purple', lwd=2)
+#     }
+#     mbnms <- readRDS(file.path(dataPath, 'MBNMS_Bounds.rda'))
+#     plot(mbnms$geometry, add=TRUE, border='blue', lwd=1)
+#     gfnms <- readRDS(file.path(dataPath, 'GFNMS_Bounds.rda'))
+#     plot(gfnms$geometry, add=TRUE, border='blue', lwd=1)
+#     # cinms <- readRDS(file.path(dataPath, 'CINMS_Bounds.rda'))
+#     # plot(cinms$geometry, add=TRUE, border='blue', lwd=1)
+#     cbnms <- readRDS(file.path(dataPath, 'CBNMS_Bounds.rda'))
+#     plot(cbnms$geometry, add=TRUE, border='blue', lwd=1)
+#     # this looks weird but converting numeric to logical with !!
+#     if(sum(!!(c(current, wind, swell, wave))) > 1) {
+#         warning('Recommended to only plot one kind of arrow data at a time')
+#     }
+#     # Current data
+#     if(current) {
+#         switch(current,
+#                '1' = {
+#                    currentNc <- file.path(dataPath, 'RTOFSForecurrent.nc')
+#                    edi <- 'ncepRtofsG3DForeDaily_LonPM180'
+#                    curVar <- c(F, F, T, T)
+#                    radial <- FALSE
+#                    xyVars <- c('u', 'v')
+#                },
+#                '2' = {
+#                    currentNc <- file.path(dataPath, 'RTOFSNowcurrent.nc')
+#                    edi <- 'ncepRtofsG3DNowDaily_LonPM180'
+#                    curVar <- c(F, F, T, T)
+#                    xyVars <- c('u', 'v')
+#                    radial <- FALSE
+#                },
+#                '3' = {
+#                    currentNc <- file.path(dataPath, 'HFRADARcurrent.nc')
+#                    edi <- 'ucsdHfrW6'
+#                    curVar <- c(T, T, rep(F, 5))
+#                    xyVars <- c('water_u', 'water_v')
+#                    radial=FALSE
+#                },
+#                '4' = {
+#                    currentNc <- file.path(dataPath, 'HYCOMGLBycurrent.nc')
+#                    edi <- PAMmisc::getEdinfo()[[2]]
+#                    curVar <- c(F, F, F, T, T)
+#                    xyVars <- c('water_u', 'water_v')
+#                    radial <- FALSE
+#                },
+#                '5' = {
+#                    currentNc <- file.path(dataPath, 'RTOFSNowcurrent6hour.nc')
+#                    curVar <- c(F, F, T, T)
+#                    xyVars <- c('u', 'v')
+#                    radial <- FALSE
+#                    edi <- 'ncepRtofsG3DNow6hrlyR2'
+#                }
+#         )
+#         
+#         updateNc(currentNc, edi, vars=curVar)
+#         curLeg <- plotArrowGrid(xLim=xlim, yLim=ylim, diff=NULL, nc=currentNc,
+#                                 xyVars = xyVars, depth=depth, time=time,
+#                                 width=width, radial=radial)
+#         
+#         curLeg$vals <- round(curLeg$vals * 1.94384, 2)
+#         title(sub = paste0('Current data as of ', curLeg$time, ' UTC'))
+#         # ucsdHfrW1
+#         # water_u/v
+#         
+#     }
+#     # Wind data
+#     if(wind) {
+#         windNc <- file.path(dataPath, 'Metopwind.nc')
+#         updateNc(windNc, 'erdQMwind1day_LonPM180', vars=c(T, T))
+#         wndLeg <- plotArrowGrid(xLim = xlim, yLim=ylim, diff=NULL, nc=windNc,
+#                                 xyVars = c('x_wind', 'y_wind'), width=width, radial=FALSE)
+#     }
+#     # Swell data
+#     if(swell) {
+#         swellNc <- file.path(dataPath, 'WW3wave.nc')
+#         updateNc(swellNc, 'ww3_global', vars=c(T, F, T, T, F, T, F, F, F))
+#         swLeg <- plotArrowGrid(xLim = xlim, yLim=ylim, diff=NULL, nc=swellNc,
+#                                xyVars = c('shgt', 'sdir'), width=width,
+#                                radial=TRUE, cart=FALSE, dirFrom=TRUE)
+#     }
+#     # Wave heigh data
+#     if(wave) {
+#         waveNc <- file.path(dataPath, 'WW3wave.nc')
+#         updateNc(waveNc, 'ww3_global', vars=c(T, F, T, T, F, T, F, F, F))
+#         wvLeg <- plotArrowGrid(xLim = xlim, yLim=ylim, diff=NULL, nc=waveNc,
+#                                xyVars = c('Thgt', 'Tdir'), width=width,
+#                                radial=TRUE, cart=FALSE, dirFrom=TRUE)
+#     }
+#     
+#     # Plotting drift and start/end points
+#     symbs <- c(48:57, 35:38, 61:64, 131, 132, 163, 165, 167, 169, 171, 174, 97:122)
+#     mapLabs <- (49:57)[as.numeric(gsub('ADRIFT_00', '', unique(drift[[labelBy]])))]
+#     nColors <- length(unique(drift[[labelBy]]))
+#     colPal <- brewer.pal(nColors, pal)
+#     for(d in seq_along(unique(drift[[labelBy]]))) {
+#         thisDrift <- drift[drift[[labelBy]] == unique(drift[[labelBy]])[d], ]
+#         if(nrow(thisDrift) == 1) next
+#         start <- which.min(thisDrift$UTC)
+#         thisDrift <- arrange(thisDrift, UTC)
+#         lines(x=thisDrift$Longitude, y=thisDrift$Latitude, col='black', lwd=2)
+#         lines(x=thisDrift$Longitude, y=thisDrift$Latitude, col=colPal[d], lwd=1, lty=1)
+#         # start/end markers
+#         points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=15, cex=1.3, col='black')
+#         points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=15, cex=1.2, col=colPal[d])
+#         end <- which.max(thisDrift$UTC)
+#         points(x=thisDrift$Longitude[end], thisDrift$Latitude[end], pch=17, col='black', cex=1.3)
+#         points(x=thisDrift$Longitude[end], thisDrift$Latitude[end], pch=17, col=colPal[d], cex=1.2)
+#         # labels
+#         points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=mapLabs[d], col='black', cex=.6)
+#         points(x=thisDrift$Longitude[end], y=thisDrift$Latitude[end], pch=mapLabs[d], col='black', cex=.6)
+#     }
+#     
+#     # Plot port cities and other POI
+#     text(x=poiDf$Longitude, y=poiDf$Latitude, labels=poiDf$Name, cex=.6, srt=30, adj=c(-.1, .5))
+#     points(x=poiDf$Longitude, y=poiDf$Latitude, cex=.5, pch=16)
+#     
+#     # Legendary
+#     # browser()
+#     lastLegend <- legend(x='topright', legend=c('Deployment', 'Recovery'),
+#                          col=c('black', 'black'), pch=c(15, 17), merge=FALSE,
+#                          seg.len = 1, cex=1, plot=FALSE)
+#     useCex <- min(.2 * diff(xlim) / lastLegend$rect$w, 1)
+#     lastLegend <- legend(x='topright', legend=c('Deployment', 'Recovery'),
+#                          col=c('black', 'black'), pch=c(15, 17), merge=FALSE,
+#                          seg.len = 1, cex=useCex)
+#     if(current) {
+#         lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=curLeg$vals, cols=curLeg$colors,
+#                                     title='Current (Knots)', cex=useCex, tCex=.67)
+#     }
+#     if(wind) {
+#         lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=wndLeg$vals, cols=wndLeg$colors,
+#                                     title='Wind Speed (m/s)', cex=useCex, tCex=.67)
+#     }
+#     if(swell) {
+#         lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=swLeg$vals, cols=swLeg$colors,
+#                                     title='Swell Size (m)', cex=useCex, tCex=.67)
+#     }
+#     if(wave) {
+#         lastLegend  <- myGradLegend(lastLeg=lastLegend, vals=wvLeg$vals, cols=wvLeg$colors,
+#                                     title='Wave Height (m)', cex=useCex, tCex=.67)
+#     }
+#     
+#     if(bathy) {
+#         # lastLegend <- myGradLegend(lastLeg=lastLegend, vals=bVals, cols=bCols,
+#         #                            title='      Depth (m)', cex=useCex, tCex=.67)
+#     }
+#     
+#     myScaleBathy(bathyData, deg=diff(xlim) * .2, x= 'bottomleft', inset=5, col='white')
+# }
 
 doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE, outDir='.') {
     if(is.character(depGps)) {
@@ -1575,14 +1579,15 @@ doTextUpdates <- function(db) {
             
         }
         toEmail <- contact$Email[contact$Id == sched$Recipient_Id[i]]
+        cat('\nTrying text schedule row', i, 'sent to:', toEmail)
         emOut <- sendTurboEmail(to=toEmail, message=message)
-        cat('\nText schedule row', i, 'sent to:', toEmail, 'response:', emOut$message)
+        cat('\nResponse:', emOut$message)
     }
 }
 
 sendTurboEmail <- function(to, message) {
-    authEmail <- 'tnsakai@gmail.com'
-    pw <- 'gwP2zxBf'
+    authEmail <- secrets$turbo_email
+    pw <- secrets$turbo_pw  
     
     url <- 'https://api.turbo-smtp.com/api/v2/mail/send'
     headList <- list(authuser = authEmail,

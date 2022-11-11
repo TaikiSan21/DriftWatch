@@ -11,7 +11,7 @@ source('DriftWatchFunctions.R')
 # Destination folder
 gdriveDest <- '~/DriftWatch/'
 
-cat('\n------------Script version', thisVersion(), 'run on', as.character(Sys.time()), '---------------')
+cat('\n---------Script version', thisVersion(), 'run on', as.character(Sys.time()), 'with R version', R.version$version.string, '---------------')
 
 cat('\nDirectory set to', script.dir)
 db <- 'SPOTGPS_Logger.sqlite3'
@@ -32,4 +32,8 @@ with_drive_quiet({
 
 cat('\nSending GPS update text messages...')
 doTextUpdates(db)
+warns <- warnings()
+if(length(warns) > 0) {
+    print(warns)
+}
 cat('\nAll completed successfully!')
