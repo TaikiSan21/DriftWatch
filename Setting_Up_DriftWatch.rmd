@@ -1,0 +1,69 @@
+# Downloads
+
+Download all contents of "DriftWatch/PlottingData"
+Download SPOTGPS_Logger.sqlite3, DriftWatchFunctions.R, and DriftWatch_Hourly.R from "DriftWatch"
+
+# Folder structure
+Create a "DriftWatch" folder and place all these files and folders within it
+In that folder create new folders "DriftPlots" and "TestDeploymentPlots"
+
+# Install packages
+
+Try to source "DriftWatchFunctions.R", you will probably need to install many of the packages
+listed at the top of the file
+
+# Change to use your Google account
+
+In "DriftWatch_Hourly.R", change line 29 from my email to your email.
+You will also need to set up GoogleDrive authentication so that R
+can access our Gddrive using your credentials. You can do this with
+
+```{r}
+googledrive::drive_auth(cache=TRUE)
+```
+
+# Set up task scheduler
+
+Now you need to set this up to run every hour using the `taskscheduleR` package. If your
+"DriftWatch_Hourly.R" file is something other than the current directory then you will need
+to change the path accordingly. When the task scheduler is running the R script you will see
+a black console window pop up on your screen (it prints out no information while running).
+
+```{r}
+install.packages('taskscheduleR')
+library(taskscheduleR)
+taskscheduler_create(taskname = "DriftWatch_Hourly", rscript = normalizePath('DriftWatch_Hourly.R'), 
+                     schedule = "HOURLY", starttime = format(Sys.time() + 62, "%H:%M"),
+                     startdate = format(Sys.Date(), '%m-%d-%Y'))
+```
+
+# Adjusting or ending the task scheduler
+
+The easiest way to edit settings or stop the scheduled task (when you no longer want DriftWatch to
+run on your computer) is by going to Windows' Task Scheduler interface. You should see a "Task Scheduler Library"
+to click on, and within there our task will be named "DriftWatch_Hourly". Click on that to change any properties
+or cancel it.
+
+# Checking for issues
+
+If plots don't seem to be uploading, you can check the "DriftWatch_Hourly.txt" log file that gets created in the
+local DriftWatch folder. Scroll to the bottom of this for the most recent updates. It's hard to give 
+too much advice on how to fix whatever errors might come up, but I find that the most frequent is that there are
+issues with the HYCOM data download. For this you might see a cryptic error like "nc4_var_get subscript out of bounds"
+or something like that. Best bet is to just delete the downloaded "HYCOMGLBycurrent.nc" file in your local DriftWatch folder,
+then either wait for it to run again or you can trigger an immediate run from the Windows Task Scheduler. DriftWatch will then
+download the HYCOM data again when it runs.
+
+# Changing current data
+
+You can change from HYCOM (current default) to HFRADAR by changing line 34 to
+
+```{r}
+useCurrent <- 3
+```
+
+# A note on run times
+
+Typically DriftWatch will take about 10 minutes to run, depending on how much new data it has to
+download and how many plots it has to upload. HOWEVER, if there have been a lot of new GPS coordinates
+since the last time it was run then it may take significantly longer.
