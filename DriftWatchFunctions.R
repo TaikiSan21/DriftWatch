@@ -1490,6 +1490,16 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
     allDep$End <- format(allDep$End, format='%Y-%m-%d %H:%M:%S')
     allDep$DataStart <- format(allDep$DataStart, format='%Y-%m-%d %H:%M:%S')
     allDep$DataEnd <- format(allDep$DataEnd, format='%Y-%m-%d %H:%M:%S')
+    # janky fix for SO-001 == SO-296 mismatch
+    for(i in 1:nrow(allDep)) {
+        has001 <- grepl('SO-001', allDep$DeviceName[i])
+        has296 <- grepl('SO-296', allDep$DeviceName[i])
+        if(has001 & !has296) {
+            allDep$DeviceName[i] <- gsub('SO-001', 'SO-001, SO-296', allDep$DeviceName[i])
+        } else if(has296 & !has001) {
+            allDep$DeviceName[i] <- gsub('SO-296', 'SO-296, SO-001', allDep$DeviceName[i])
+        }
+    }
     # cat('\nReading DB')
     con <- dbConnect(db, drv=SQLite())
     dbDep <- dbReadTable(con, 'deploymentData')
