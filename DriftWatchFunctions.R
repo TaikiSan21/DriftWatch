@@ -465,7 +465,7 @@ dropBySpeed <- function(x, knots=4) {
     }
     x <- arrange(x, UTC)
     tDiff <- as.numeric(difftime(x$UTC[2:nrow(x)], x$UTC[1:(nrow(x)-1)], units='secs'))
-    x <- x[abs(tDiff) > 5,] 
+    x <- x[c(TRUE, abs(tDiff) > 5),] 
     x$knots <- calcKnots(x)
     whichHigh <- which(x$knots > knots)
     if(length(whichHigh) == 0) {
@@ -783,11 +783,21 @@ plotArrowGrid <- function(xLim, yLim, diff=NULL, nc, xyVars, depth=0, time=nowUT
         }
         diff <- rep(diff, 2)
     }
-    # browser()
+    # janky fix for janky hfradar. Often most recent hour is NA, so set up
+    # to do average of last 2 hours
+    buffer <- c(0,0,0)
+    if(grepl('HFRADAR', nc)) {
+        tmp <- nc_open(nc)
+        tDim <- tmp$dim$time$vals
+        nc_close(tmp)
+        tDim <- as.POSIXct(tDim, origin='1970-01-01 00:00:00', tz='UTC')
+        time <- max(tDim)
+        buffer <- c(0,0, 3600)
+    }
     llg <- makeLatLongGrid(xLim, yLim, diff[1], diff[2], depth, time=time)
     diff <- diff * scale
 
-    llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE)
+    llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE, buffer=buffer)
     llg <- PAMmisc:::to180(llg)
     varNames <- paste0(xyVars, '_mean')
     # If given in R, theta
