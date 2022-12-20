@@ -26,7 +26,7 @@ db <- 'SPOTGPS_Logger.sqlite3'
 # checkDeploymentUpdates(db=db)
 # cat('\nUploading DB to gdrive...')
 with_drive_quiet({
-    drive_auth(email='taiki.sakai@noaa.gov')
+    drive_auth(email='taiki.sakai@noaa.gov', cache='.secrets')
     #     drive_upload(db, path=gdriveDest, overwrite = TRUE)
 })
 cat('\nChecking for GPS CSV updates...')
@@ -37,28 +37,35 @@ sanctSumm <- createSanctSummary(db, 'PlottingData')
 write.csv(sanctSumm, file='SanctuarySummary.csv', row.names = FALSE)
 doGdriveUpload('SanctuarySummary.csv', gdriveDest)
 useCurrent <- 4
-cat('\nMaking individual drift plots...')
 # now doing both hycom and hfradar for deployed plots
-hycomOK <- updateNc(file='HYCOMGLBycurrent.nc', id=PAMmisc::getEdinfo()[['HYCOM']], vars=c(F, F, F, T, T))
-hfradarOK <- updateNc(file='HFRADARcurrent.nc', id='ucsdHfrW6', vars=c(T, T, rep(F, 5)))
+cat('\nChecking HYCOM data...')
+hycomOK <- try(updateNc(file='PlottingData/HYCOMGLBycurrent.nc', id=PAMmisc::getEdinfo()[['HYCOM']], vars=c(F, F, F, T, T)))
+# hycomOK <- FALSE
+cat('\nChecking HFRADAR data...')
+hfradarOK <- try(updateNc(file='PlottingData/HFRADARcurrent.nc', id='ucsdHfrW6', vars=c(T, T, rep(F, 5))))
 
-if(file.size('HYCOMGLBycurrent.nc') < 1e3) {
+wcofsOK <- TRUE
+
+if(inherits(hycomOK, 'try-error') ||
+   file.size('HYCOMGLBycurrent.nc') < 1e3) {
     cat('\nWARNING: Problem with downloading HYCOM data')
     hycomOK <- FALSE
 }
 
-if(file.size('HFRADARcurrent.nc') < 1e3) {
+if(inherits(hfradarOK, 'try-error') ||
+   file.size('HFRADARcurrent.nc') < 1e3) {
     cat('\nWARNING: Problem with downloading HFRADAR data')
     hfradarOK <- FALSE
 }
 
+cat('\nMaking individual drift plots...')
 driftPlots <- character(0)
 if(hycomOK) {
-    driftPlots <- doDriftPlots(db, verbose=T, current=4, outDir='./DriftPlots/')
+    driftPlots <- doDriftPlots(db, verbose=T, current=4, outDir='./DriftPlots/', dataPath = 'PlottingData')
 }
 if(hfradarOK) {
     driftPlots <- c(driftPlots,
-                    doDriftPlots(db, verbose=T, current=3, outDir = './DriftPlots/'))
+                    doDriftPlots(db, verbose=T, current=3, outDir = './DriftPlots/', dataPath = 'PlottingData'))
 }
 cat('\nMaking last 2 weeks plot...')
 
@@ -67,18 +74,28 @@ noPlot <- c('ADRIFT_004', 'ADRIFT_008')
 recentDrifts <- getDbDeployment(db, days=14, verbose=FALSE)
 recentDrifts <- recentDrifts[!(recentDrifts$DriftName %in% noPlot), ]
 if(nrow(recentDrifts) > 0) {
-    twoWeekPlot <- plotAPIDrift(recentDrifts, filename='./DriftPlots/Last14Days.png', current=FALSE)
+    twoWeekPlot <- plotAPIDrift(recentDrifts, filename='./DriftPlots/Last14Days.png', current=FALSE, dataPath = 'PlottingData')
 } else {
     twoWeekPlot <- NULL
 }
 cat('\nMaking test deployment worksheet plots...')
 testDepPlots <- character(0)
 if(hycomOK) {
-    testDepPlots <- plotTestDeployments(current=4, driftData=getDbDeployment(db, verbose=FALSE), outDir = './TestDeploymentPlots/')
+    cat('\nWith HYCOM...')
+    testDepPlots <- plotTestDeployments(current=4, driftData=getDbDeployment(db, verbose=FALSE),
+                                        outDir = './TestDeploymentPlots/', dataPath = 'PlottingData')
 }
 if(hfradarOK) {
+    cat('\nWith HFRADAR...')
     testDepPlots <- c(testDepPlots,
-                      plotTestDeployments(current=3, driftData=getDbDeployment(db, verbose=FALSE), outDir = './TestDeploymentPlots/'))
+                      plotTestDeployments(current=3, driftData=getDbDeployment(db, verbose=FALSE), 
+                                          outDir = './TestDeploymentPlots/', dataPath = 'PlottingData'))
+}
+if(wcofsOK) {
+    cat('\nWith WCOFS...')
+    testDepPlots <- c(testDepPlots,
+                      plotTestDeployments(current=6, driftData=getDbDeployment(db, verbose=FALSE), 
+                                          outDir = './TestDeploymentPlots/', dataPath = 'PlottingData'))
 }
 # cat('\nMaking CCC plots...')
 # ccc <- getDbDeployment(db, drift=paste0('ADRIFT_0', 19:26))

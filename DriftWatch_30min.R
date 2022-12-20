@@ -12,7 +12,9 @@ source('DriftWatchFunctions.R')
 gdriveDest <- '~/DriftWatch/'
 
 cat('\n---------Script version', thisVersion(), 'run on', as.character(Sys.time()), 'with R version', R.version$version.string, '---------------')
-
+with_drive_quiet({
+    drive_auth(email='taiki.sakai@noaa.gov', cache='.secrets')
+})
 cat('\nDirectory set to', script.dir)
 db <- 'SPOTGPS_Logger.sqlite3'
 
@@ -23,10 +25,11 @@ cat('\nUpdating GPS from Lonestar API...')
 updateLs <- addAPIToDb(db=db, source='lonestar')
 # Upload to gdrive
 cat('\nChecking for new deployments on worksheet...')
-checkDeploymentUpdates(db=db)
+updatedDrifts <- checkDeploymentUpdates(db=db)
+updateGpsCsv(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2', dataPath='PlottingData',
+             force=updatedDrifts)
 cat('\nUploading DB to gdrive...')
 with_drive_quiet({
-    drive_auth(email='taiki.sakai@noaa.gov')
     drive_upload(db, path=gdriveDest, overwrite = TRUE)
 })
 

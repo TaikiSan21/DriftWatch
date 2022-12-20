@@ -18,6 +18,7 @@ suppressPackageStartupMessages({
     library(readxl)
     library(lubridate)
     library(yaml)
+    library(RNetCDF)
 })
 # Updated 1-19-22 post collapse v 1.0
 # Updated 2-7-2022 fkin etopos
@@ -646,6 +647,12 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
                    xyVars <- c('u', 'v')
                    radial <- FALSE
                    edi <- 'ncepRtofsG3DNow6hrlyR2'
+               },
+               '6' = {
+                   currentNc <- file.path(dataPath, 'WCOFS_ROMS.rds')
+                   curVar <- T
+                   xyVars <- c('u_eastward', 'v_northward')
+                   radial <- FALSE
                }
         )
         
@@ -655,7 +662,8 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
                                 width=width, radial=radial)
         
         curLeg$vals <- round(curLeg$vals * 1.94384, 2)
-        title(sub = paste0('Current data as of ', curLeg$time, ' UTC'))
+        title(sub = paste0('Current data as of ', 
+                           format(curLeg$time, '%Y-%m-%d %H:%M:%S'), ' Pacific'))
         # ucsdHfrW1
         # water_u/v
         
@@ -796,10 +804,14 @@ plotArrowGrid <- function(xLim, yLim, diff=NULL, nc, xyVars, depth=0, time=nowUT
     }
     llg <- makeLatLongGrid(xLim, yLim, diff[1], diff[2], depth, time=time)
     diff <- diff * scale
-
-    llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE, buffer=buffer)
+    if(grepl('WCOFS_ROMS', nc)) {
+        llg <- matchWcofsData(llg, wcFile=nc, depth=depth)
+        varNames <- xyVars
+    } else {
+        llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE, buffer=buffer)
+        varNames <- paste0(xyVars, '_mean')
+    }
     llg <- PAMmisc:::to180(llg)
-    varNames <- paste0(xyVars, '_mean')
     # If given in R, theta
     if(radial) {
         angle <- llg[[varNames[2]]]
@@ -838,7 +850,7 @@ plotArrowGrid <- function(xLim, yLim, diff=NULL, nc, xyVars, depth=0, time=nowUT
     legCols <- aCols[legIx]
     legVals <- round(seq(from=0, to=max(llg$mag, na.rm=TRUE), length.out=7), 2)
     legVals[c(2,4,6)] <- NA
-    list(colors=legCols, vals=legVals, time=llg$matchTime_mean[1])
+    list(colors=legCols, vals=legVals, time=with_tz(llg$matchTime_mean[1], 'America/Los_Angeles'))
 }
 
 makeLatLongGrid <- function(longRange, latRange, longDiff, latDiff, depth=0, time=nowUTC()) {
@@ -851,6 +863,21 @@ makeLatLongGrid <- function(longRange, latRange, longDiff, latDiff, depth=0, tim
 }
 
 updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
+    if(grepl('WCOFS_ROMS.rds', file)) {
+        if(file.exists(file)) {
+            fInfo <- file.info(file)
+            hourDiff <- as.numeric(difftime(Sys.time(), fInfo$mtime, units='hours'))
+            if(hourDiff < 3) {
+                return(TRUE)
+            }
+        }
+        tryDl <- wcofsToList(file=file)
+        if(is.null(tryDl)) {
+            cat('WCOFS download failed.')
+            return(FALSE)
+        }
+        return(TRUE)
+    }
     rangeDf <- makeRangeDf()
     if(file.exists(file)) {
         fInfo <- file.info(file)
@@ -869,8 +896,12 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
             }
         }
         if(isTRUE(ncTry$error)) {
-            msg <- suppressWarnings(read.table(file, sep='\n'))
-            msg <- msg[1,1]
+            msg <- suppressWarnings(try(read.table(file, sep='\n')))
+            if(inherits(msg, 'try-error')) {
+                msg <- 'No message content'
+            } else {
+                msg <- msg[1,1]
+            }
             cat('Download failed with message "', msg, '"\n')
             if(grepl('does not intersect actual time', msg)) {
                 splitMsg <- strsplit(msg, ' ')[[1]]
@@ -913,6 +944,114 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     },
     TRUE
     )
+}
+
+
+checkWcUrl <- function(date=nowUTC()) {
+    ymdh <- getWcofsTime(date)
+    url <- buildWcUrl(ymdh[1], ymdh[2], ymdh[3], ymdh[4])
+    nc <- try(open.nc(url))
+    if(inherits(nc, 'try-error')) {
+        ymdh <- getWcofsTime(date - 24 * 3600)
+        url <- buildWcUrl(ymdh[1], ymdh[2], ymdh[3], ymdh[4]+24)
+        nc <- try(open.nc(url))
+        if(inherits(nc, 'try-error')) {
+            warning(url, ' is not a valid dataset')
+            return(NULL)
+        }
+    } 
+    close.nc(nc)
+    url
+}
+
+matchWcofsData <- function(data, wcFile, depth=0) {
+    wcofs <- readRDS(wcFile)
+    
+    data$u_eastward <- NA
+    data$v_northward <- NA
+    xIx <- sapply(data$Longitude, function(x) {
+        which.min(abs(wcofs$Longitude - x))[1]
+    })
+
+    yIx <- sapply(data$Latitude, function(x) {
+        which.min(abs(wcofs$Latitude - x))[1]
+    })
+
+    for(i in 1:nrow(data)) {
+        data$u_eastward[i] <- wcofs$u_eastward[xIx[i], yIx[i]]
+        data$v_northward[i] <- wcofs$v_northward[xIx[i], yIx[i]]
+    }
+    data$matchTime_mean <- wcofs$UTC
+    data
+}
+
+wcofsToList <- function(time=nowUTC(), depth=0, file='WCOFS_ROMS.rds') {
+    url <- checkWcUrl(time)
+    if(is.null(url)) {
+        warning('Could not download WCOFS')
+        return(NULL)
+    }
+    nc <- open.nc(url)
+    on.exit(close.nc(nc))
+    lat <- var.get.nc(nc, 'Latitude', start=c(1,1), count=c(1,NA))
+    lon <- var.get.nc(nc, 'Longitude', start=c(1,1), count=c(NA, 1))
+    d <- var.get.nc(nc, 'Depth', start=1, count=NA)
+    data <- makeRangeDf()
+    data$u_eastward <- NA
+    data$v_northward <- NA
+    allXix <- sapply(data$Longitude, function(x) {
+        which.min(abs(lon - x))[1]
+    })
+    startX <- min(allXix)
+    countX <- diff(range(allXix)) + 1
+    allYix <- sapply(data$Latitude, function(x) {
+        which.min(abs(lat - x))[1]
+    })
+    startY <- min(allYix)
+    countY <- diff(range(allYix)) + 1
+    tIx <- 1
+    startZ <- which.min(abs(d - depth))
+    
+    allX <- var.get.nc(nc, 'u_eastward', start=c(startX, startY, startZ, 1),
+                       count = c(countX, countY, 1, 1))
+    allY <- var.get.nc(nc, 'v_northward', start=c(startX, startY, 1, 1),
+                       count = c(countX, countY, 1, 1))
+    ncTime <- var.get.nc(nc, 'ocean_time', start=1, count=1)
+    ncTime <- as.POSIXct(ncTime, origin='2016-01-01 00:00:00', tz='UTC')
+    result <- list(Latitude=lat[startY:(startY+countY-1)], 
+                   Longitude=lon[startX:(startX+countX-1)], 
+                   Depth = d,
+                   u_eastward = allX,
+                   v_northward = allY,
+                   UTC = ncTime)
+    saveRDS(result, file=file)
+    result
+}
+
+getWcofsTime <- function(time=nowUTC()) {
+    now <- round_date(time, unit='3hour')
+    year <- year(now)
+    mon <- month(now)
+    day <- day(now)
+    hour <- hour(now)
+    webDay <- day(now())
+    if(day > webDay) {
+        hour <- hour + 24 * (day - webDay)
+        day <- webDay
+    }
+    # c(year, mon, day, hour)
+    c(year, mon, day, hour -3)
+}
+
+buildWcUrl <- function(y, m, d, h) {
+    base <- 'https://opendap.co-ops.nos.noaa.gov/thredds/dodsC/NOAA/WCOFS/MODELS/'
+    m <- sprintf('%02d', m)
+    d <- sprintf('%02d', d)
+    h <- sprintf('%03d', h)
+    ymd <- paste0(y, '/', m, '/', d, '/')
+    dset <- 'nos.wcofs.regulargrid.f'
+    dsetTime <- paste0(h, '.', y, m, d, '.t03z.nc')
+    paste0(base, ymd, dset, dsetTime)
 }
 
 makeRangeDf <- function() {
@@ -1068,7 +1207,7 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
         curName <- switch(as.character(current),
                           '4' = '_HYCOM',
                           '3' = '_HFRADAR',
-                          ''
+                          '6' = '_WCOFS'
         )
         if(is.null(thisDrift$DeploymentSite) ||
            is.na(unique(thisDrift$DeploymentSite))) {
@@ -1481,7 +1620,8 @@ doGdriveUpload <- function(files, destination, modHours=1) {
 }
 
 # Check for new deployments from worksheet
-checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7codYwgD2YncFk', db='SPOTGPS_Logger.sqlite3') {
+checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7codYwgD2YncFk', 
+                                   db='SPOTGPS_Logger.sqlite3') {
     sheetId <- as_id(sheetId)
     with_drive_quiet({
         drive_download(sheetId, path='deployDetails', overwrite = TRUE)
@@ -1513,6 +1653,7 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
     # cat('\nReading DB')
     con <- dbConnect(db, drv=SQLite())
     dbDep <- dbReadTable(con, 'deploymentData')
+    # dbDep$
     on.exit(dbDisconnect(con))
     # dbDep$Start <- as.POSIXct(dbDep$Start, format='%Y-%m-%d %H:%M:%S', tz='UTC')
     # dbDep$End <- as.POSIXct(dbDep$End, format='%Y-%m-%d %H:%M:%S', tz='UTC')
@@ -1524,16 +1665,21 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
         cat('\nAdded', nrow(toAdd), 'rows to database')
     }
     toCheck <- allDep[allDep$DriftName %in% dbDep$DriftName, ]
-    nUpdate <- updateNaVals(db, toCheck = toCheck)
-    if(nUpdate > 0) {
-        cat('\nUpdated', nUpdate, 'values in deploymentData')
+    updated <- updateNaVals(db, toCheck = toCheck)
+    if(length(updated) > 0) {
+        cat('\nUpdated', length(updated), 'values in deploymentData')
     }
-    invisible(TRUE)
+    # invisible(TRUE)
+    updated
 }
 
 # updating existing data in DB but only if existing is NA
 # Does not replace any existing data bc if we manually change
 # would keep overriding
+# add drift names to this if we want db to differ from deployDetails sheet
+DONTCHANGEDRIFT <- c(paste0('ADRIFT_00', 1:9),
+                     paste0('ADRIFT_0', 10:11))
+
 updateNaVals <- function(db, table = 'deploymentData', toCheck) {
     if(nrow(toCheck) == 0) {
         return(0)
@@ -1542,17 +1688,30 @@ updateNaVals <- function(db, table = 'deploymentData', toCheck) {
     on.exit(dbDisconnect(con))
     
     dbDep <- dbReadTable(con, 'deploymentData')
-    nUpd <- 0
-    for(j in c('Start', 'End', 'DeviceName', 'DriftName', 'DeploymentSite', 'DataStart', 'DataEnd')) {
+    dbDep$Start <- pgDateToPosix(dbDep$Start)
+    dbDep$End <- pgDateToPosix(dbDep$End)
+    toCheck$Start <- pgDateToPosix(toCheck$Start)
+    toCheck$End <- pgDateToPosix(toCheck$End)
+    # nUpd <- 0
+    updated <- character(0)
+    # for(j in c('Start', 'End', 'DeviceName', 'DriftName', 'DeploymentSite', 'DataStart', 'DataEnd')) {
+    for(j in c('Start', 'End', 'DataStart', 'DataEnd', 'DeploymentSite')) {
         thisCheck <- rep(FALSE, nrow(toCheck))
         for(i in 1:nrow(toCheck)) {
-            # setting any date only (00:00:00) to NA to force recheck
-            whichDrift <- which(dbDep$DriftName == toCheck$DriftName[i])
-            if(j %in% c('Start', 'End') &&
-               grepl('00:00:00$', dbDep[[j]][whichDrift])) {
-                dbDep[[j]][whichDrift] <- NA
+            if(toCheck$DriftName[i] %in% DONTCHANGEDRIFT) {
+                next
             }
-            thisCheck[i] <- is.na(dbDep[[j]][whichDrift]) & !is.na(toCheck[[j]][i])
+            # # setting any date only (00:00:00) to NA to force recheck
+            whichDrift <- which(dbDep$DriftName == toCheck$DriftName[i])
+            # if(j %in% c('Start', 'End') &&
+            #    allZero(dbDep[[j]][whichDrift]) &&
+            #    !allZero(toCheck[[j]][i])) {
+            #     dbDep[[j]][whichDrift] <- NA
+            # }
+            # thisCheck[i] <- is.na(dbDep[[j]][whichDrift]) & !is.na(toCheck[[j]][i])
+            # Changing behavior to always update if diffrent
+            # thisCheck[i] <- dbDep[[j]][whichDrift] != toCheck[[j]][i]
+            thisCheck[i] <- !identical(dbDep[[j]][whichDrift], toCheck[[j]][i])
         }
         if(!any(thisCheck)) {
             next
@@ -1564,10 +1723,11 @@ updateNaVals <- function(db, table = 'deploymentData', toCheck) {
                          "' WHERE DriftName = '", toCheck$DriftName[i], "'")
             addVal <- dbSendQuery(con, q)
             dbClearResult(addVal)
-            nUpd <- nUpd + 1
+            # nUpd <- nUpd + 1
+            updated <- c(updated, toCheck$DriftName[i])
         }
     }
-    nUpd
+    updated
 }
 
 doTextUpdates <- function(db) {
@@ -1684,7 +1844,8 @@ getLastUpdate <- function(x, last=2, gpsFmt='dms', toLocal = TRUE) {
     list(drift=x$DriftName[1], position=position, direction=round(direction %% 360, 0), speed=round(dist / time / 1.852, 2), date=date)
 }
 
-updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2', dataPath='.') {
+updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOishMn2', dataPath='.',
+                         force=NULL) {
     id <- as_id(id)
     csvs <- drive_ls(id)$name
     # csvs <- list.files(csvDir, pattern='csv$', full.names=TRUE)
@@ -1693,7 +1854,11 @@ updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOis
     on.exit(dbDisconnect(con))
     dep <- dbReadTable(con, 'deploymentData')
     dep <- dep[!is.na(dep$End) & !is.na(dep$Start), ]
-    toDo <- dep$DriftName[!(dep$DriftName %in% doneDrifts)]
+    if(!is.null(force)) {
+        toDo <- unique(force)
+    } else {
+        toDo <- dep$DriftName[!(dep$DriftName %in% doneDrifts)]
+    }
     for(d in toDo) {
         thisGps <- getDbDeployment(db, drift=d, verbose=FALSE)
         if(nrow(thisGps) == 0) next
@@ -1702,8 +1867,8 @@ updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOis
         plotAPIDrift(thisGps, current=FALSE, wca=FALSE, bathy=TRUE, sl=FALSE, nms=TRUE, xlim=.3, ylim=.3,
                      filename=paste0(thisFile, '.png'), dataPath=dataPath)
         write.csv(thisGps, file = paste0(thisFile, '.csv'), row.names = FALSE)
-        drive_upload(paste0(thisFile, '.csv'), path=id)
-        drive_upload(paste0(thisFile, '.png'), path=id)
+        drive_upload(paste0(thisFile, '.csv'), path=id, overwrite = TRUE)
+        drive_upload(paste0(thisFile, '.png'), path=id, overwrite = TRUE)
     }
 }
 
