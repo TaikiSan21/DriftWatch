@@ -499,7 +499,7 @@ dropBySpeed <- function(x, knots=4) {
 plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE, sl=TRUE, wca=TRUE,
                          nms=FALSE, current=4, wind=FALSE, swell=FALSE, wave=FALSE, depth=0, time=nowUTC(),
                          size = 4, xlim=1, ylim=.5, labelBy='DriftName', title=NULL,
-                         dataPath='.') {
+                         dataPath='PlottingData') {
     if(is.null(etopo)) {
         etopo <- file.path(dataPath, 'etopo180.nc')
     } else {
