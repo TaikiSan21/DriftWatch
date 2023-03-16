@@ -44,18 +44,25 @@ hycomOK <- try(updateNc(file='PlottingData/HYCOMGLBycurrent.nc', id=PAMmisc::get
 cat('\nChecking HFRADAR data...')
 hfradarOK <- try(updateNc(file='PlottingData/HFRADARcurrent.nc', id='ucsdHfrW6', vars=c(T, T, rep(F, 5))))
 
-wcofsOK <- TRUE
+wcofsOK <- try(updateNc(file='PlottingData/WCOFS_ROMS.rds', vars=TRUE))
+# wcofsOK <- TRUE
 
 if(inherits(hycomOK, 'try-error') ||
-   file.size('HYCOMGLBycurrent.nc') < 1e3) {
+   file.size('PlottingData/HYCOMGLBycurrent.nc') < 1e3) {
     cat('\nWARNING: Problem with downloading HYCOM data')
     hycomOK <- FALSE
 }
 
 if(inherits(hfradarOK, 'try-error') ||
-   file.size('HFRADARcurrent.nc') < 1e3) {
+   file.size('PlottingData/HFRADARcurrent.nc') < 1e3) {
     cat('\nWARNING: Problem with downloading HFRADAR data')
     hfradarOK <- FALSE
+}
+
+if(inherits(wcofsOK, 'try-error') |
+   file.size('PlottingData/WCOFS_ROMS.rds') < 1e3) {
+    cat('\nWARNING: Problem with download WCOFS data')
+    wcofsOK <- FALSE
 }
 
 cat('\nMaking individual drift plots...')

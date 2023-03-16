@@ -19,6 +19,9 @@ suppressPackageStartupMessages({
     library(lubridate)
     library(yaml)
     library(RNetCDF)
+    library(ggplot2)
+    library(patchwork)
+    library(stringr)
 })
 # Updated 1-19-22 post collapse v 1.0
 # Updated 2-7-2022 fkin etopos
@@ -597,7 +600,7 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     if(wca) {
         windCall <- readRDS(file.path(dataPath, 'WindCallBoundary.RData'))
         # windCall <- readRDS('../Data/SPOTXML/WindCallBoundary.RData')
-        plot(windCall$geometry, add=TRUE, border='purple', lwd=2)
+        plot(st_union(windCall), add=TRUE, border='purple', lwd=2)
     }
     # national marine sanctuaries
     if(nms) {
@@ -1177,7 +1180,12 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
     colnames(deps)[3] <- 'DriftName'
     naCols <- is.na(deps$Latitude) | is.na(deps$Longitude)
     if(!is.null(driftData)) {
-        naCols <- naCols & !(deps$DriftName %in% driftData$DriftName)
+        isDrift <- sapply(strsplit(deps$DriftName, ','), function(x) {
+            x <- str_trim(x)
+            any(x %in% driftData$DriftName)
+        })
+        naCols <- naCols & !isDrift
+        # naCols <- naCols & !(deps$DriftName %in% driftData$DriftName)
     }
     deps <- deps[!naCols, ]
     deps$UTC <- nowUTC()
@@ -1194,8 +1202,10 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
             next
         }
         if(!is.null(driftData) &&
-           i %in% driftData$DriftName) {
-            thisDrift <- driftData[driftData$DriftName == i, ]
+           # i %in% driftData$DriftName) {
+           any(str_trim(strsplit(i, ',')[[1]]) %in% driftData$DriftName)) {
+            thisDrift <- driftData[driftData$DriftName %in% 
+                                       str_trim(strsplit(i, ',')[[1]]), ]
             thisDrift$LatRange <- deps$LatRange[deps$DriftName == i][1]
             thisDrift$LonRange <- deps$LonRange[deps$DriftName == i][1]
         } else {
@@ -1235,7 +1245,7 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
         outFiles <- c(outFiles,
                       plotAPIDrift(thisDrift, etopo=etopo, labelBy = 'DriftName',
                                    filename=thisFile, current=current, dataPath = dataPath,
-                                   xlim=lonr, ylim=latr)
+                                   xlim=lonr, ylim=latr, title=gsub('_', '', curName))
         )
     }
     outFiles
@@ -1558,7 +1568,11 @@ sheetToDbDepFormat <- function(x, new=FALSE) {
                      "GPS ID (if appropriate - top / bottom)",
                      'Project',
                      'DeploymentID',
-                     'Site'
+                     'Site',
+                     'Deployment_Latitude',
+                     'Deployment_Longitude',
+                     'Recovery_Latitude', 
+                     'Recovery_Longitude'
         )
     } else {
         # first 8 rows have bad formatting for dates, are MB/POSIT survey
@@ -1570,10 +1584,18 @@ sheetToDbDepFormat <- function(x, new=FALSE) {
                      'GPS_ID',
                      'Project',
                      'DeploymentID',
-                     'Site'
+                     'Site',
+                     'Deployment_Latitude',
+                     'Deployment_Longitude',
+                     'Recovery_Latitude', 
+                     'Recovery_Longitude'
         )
     }
-    dbNames <- c('Start', 'DataStart','End','DataEnd', 'DeviceName', 'DriftName', 'DeploymentID', 'DeploymentSite')
+    dbNames <- c('Start', 'DataStart','End','DataEnd', 'DeviceName', 'DriftName', 'DeploymentID', 'DeploymentSite',
+                 'Deployment_Latitude',
+                 'Deployment_Longitude',
+                 'Recovery_Latitude', 
+                 'Recovery_Longitude')
     x <- dplyr::select(x, all_of(selCols))
     colnames(x) <- dbNames
     for(i in c('DeviceName', 'DriftName', 'DeploymentID', 'DeploymentSite')) {
@@ -1604,6 +1626,15 @@ sheetToDbDepFormat <- function(x, new=FALSE) {
     # x$DataStart <- NULL
     # x$DataEnd <- NULL
     x$DeviceName <- gsub('\\/', ', ', x$DeviceName)
+    isOpp <- grepl('OPPS', x$DriftName)
+    for(i in which(isOpp)) {
+        oppsName <- paste0(x$DriftName[i], c('_D', '_R'), collapse=', ')
+        if(x$DeviceName[i] == 'NA') {
+            x$DeviceName[i] <- oppsName
+        } else {
+            x$DeviceName[i] <- paste0(x$DeviceName[i], ', ', oppsName)
+        }
+    }
     drops <- is.na(x$Start) | x$DeviceName == 'NA'
     x[!drops, ]
 }
@@ -1634,6 +1665,7 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
     newDep <- sheetToDbDepFormat(newDep, new=TRUE)
     depDet <- sheetToDbDepFormat(depDet, new=FALSE)
     allDep <- rbind(newDep, depDet)
+    oppData <- createOppData(db, allDep)
     # allDep$Start <- as.character(allDep$Start)
     # allDep$End <- as.character(allDep$End)
     allDep$Start <- format(allDep$Start, format='%Y-%m-%d %H:%M:%S')
@@ -1652,16 +1684,33 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
     }
     # cat('\nReading DB')
     con <- dbConnect(db, drv=SQLite())
+    on.exit(dbDisconnect(con))
     dbDep <- dbReadTable(con, 'deploymentData')
     # dbDep$
-    on.exit(dbDisconnect(con))
+    ########
+    if(nrow(oppData) > 0) {
+        dbLog <- dbReadTable(con, 'gpsLogger')
+        gpsData <- dbReadTable(con, 'gpsData')
+        oppData$Id <- 1:nrow(oppData) + max(gpsData$Id)
+        oppData$UTC <- format(oppData$UTC, format='%Y-%m-%d %H:%M:%S')
+        logId <- max(dbLog$Id) + 1
+        now <- nowUTC()
+        
+        logAppend <- data.frame(Id = logId, UTC = format(now, format='%Y-%m-%d %H:%M:%S'),
+                                RowsAdded = nrow(oppData),
+                                Source = 'Fake Opportunistic')
+        dbAppendTable(con, 'gpsLogger', logAppend)
+        dbAppendTable(con, 'gpsData', oppData)
+    }
+    ###########
     # dbDep$Start <- as.POSIXct(dbDep$Start, format='%Y-%m-%d %H:%M:%S', tz='UTC')
     # dbDep$End <- as.POSIXct(dbDep$End, format='%Y-%m-%d %H:%M:%S', tz='UTC')
     # 
     toAdd <- allDep[!allDep$DriftName %in% dbDep$DriftName, ]
+    dbNames <- c('Id', 'Start', 'End', 'DeviceName', 'DriftName', 'DeploymentSite', 'DataStart', 'DataEnd')
     if(nrow(toAdd) > 0) {
         toAdd$Id <- max(dbDep$Id) + 1:nrow(toAdd)
-        dbAppendTable(con, 'deploymentData', toAdd)
+        dbAppendTable(con, 'deploymentData', toAdd[dbNames])
         cat('\nAdded', nrow(toAdd), 'rows to database')
     }
     toCheck <- allDep[allDep$DriftName %in% dbDep$DriftName, ]
@@ -1671,6 +1720,53 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
     }
     # invisible(TRUE)
     updated
+}
+
+createOppData <- function(db, depDet) {
+    isOpp <- grepl('OPPS', depDet$DriftName)
+    depDet <- depDet[isOpp, ]
+    oppNames <- unique(depDet$DriftName)
+    oppData <- getDbDeployment(db, drift=oppNames)
+    for(c in c('Recovery_Longitude', 'Recovery_Latitude',
+               'Deployment_Longitude', 'Deployment_Latitude')) {
+        if(is.list(depDet[[c]])) {
+            depDet[[c]] <- unlist(depDet[[c]])
+        }
+    }
+    # for(i in 1:nrow(depDet)) {
+    addOpp <- bind_rows(lapply(split(depDet, depDet$DriftName), function(x) {
+        thisOpp <- x$DriftName
+        result <- list()
+        if(!is.na(x$Start) &&
+           !(paste0(thisOpp, '_D') %in% oppData$DeviceName) &&
+           !is.na(x$Deployment_Latitude) &&
+           !is.na(x$Deployment_Longitude) &&
+           x$Deployment_Latitude != 'NA' &&
+           x$Deployment_Longitude != 'NA') {
+            result$Id <- NA
+            result$Latitude <- x$Deployment_Latitude
+            result$Longitude <- x$Deployment_Longitude
+            result$UTC <- x$Start + 1
+            result$DeviceName <- paste0(thisOpp, '_D')
+        }
+        if(!is.na(x$End) &&
+           !(paste0(thisOpp, '_R') %in% oppData$DeviceName) &&
+           !is.na(x$Recovery_Latitude) &&
+           !is.na(x$Recovery_Longitude) &&
+           x$Recovery_Longitude != 'NA' &&
+           x$Recovery_Latitude != 'NA') {
+            result$Id <- c(result$Id, NA)
+            result$Latitude <- c(result$Latitude, x$Recovery_Latitude)
+            result$Longitude <- c(result$Longitude, x$Recovery_Longitude)
+            result$UTC <- c(result$UTC, x$End - 1)
+            result$DeviceName <- c(result$DeviceName, paste0(thisOpp, '_R'))
+        }
+        if(length(result) == 0) {
+            return(NULL)
+        }
+        result
+    }))
+    
 }
 
 # updating existing data in DB but only if existing is NA
@@ -1740,7 +1836,7 @@ doTextUpdates <- function(db) {
         tz(sched$Stop_Local) <- 'America/Los_Angeles'
         contact <- read_sheet(ss=SHEETID, sheet='Contacts')
     })
-    dayMax <- 1
+    dayMax <- 2
     for(i in 1:nrow(sched)) {
         if(with_tz(sched$Start_Local[i], 'UTC') > nowUTC()) next
         if(with_tz(sched$Stop_Local[i], 'UTC') < nowUTC()) next
@@ -1852,7 +1948,8 @@ updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOis
     doneDrifts <- gsub('_GPS\\.csv$', '', basename(csvs))
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
-    dep <- dbReadTable(con, 'deploymentData')
+    # dep <- dbReadTable(con, 'deploymentData')
+    dep <- getDeploymentData(db)
     dep <- dep[!is.na(dep$End) & !is.na(dep$Start), ]
     if(!is.null(force)) {
         toDo <- unique(force)
@@ -1862,14 +1959,97 @@ updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOis
     for(d in toDo) {
         thisGps <- getDbDeployment(db, drift=d, verbose=FALSE)
         if(nrow(thisGps) == 0) next
-        cat('\nWriting GPS CSV for drift', d, '...')
+        if(nrow(thisGps) == 1) {
+            thisGps <- bind_rows(thisGps, thisGps)
+            thisGps$UTC[2] <- thisGps$UTC[2] + 1
+        }
         thisFile <- file.path(csvDir, paste0(d, '_GPS'))
+        qaqc <- plotGpsQAQC(mixExtra(thisGps), ylim=4, 
+                    xlim=c(dep$Start[dep$DriftName == d],
+                           dep$End[dep$DriftName == d]),
+                    filename = paste0(thisFile, '_QAQC.png'),
+                    title=paste0(d, ' QAQC'))
+        thisGps <- ncToData(thisGps, nc=file.path(dataPath, 'etopo180.nc'),
+                            keepMatch = FALSE, progress=FALSE)
+        thisGps <- rename(thisGps, depth = altitude_mean)
+        thisGps$depth <- thisGps$depth * -1
+        cat('\nWriting GPS CSV for drift', d, '...')
         plotAPIDrift(thisGps, current=FALSE, wca=FALSE, bathy=TRUE, sl=FALSE, nms=TRUE, xlim=.3, ylim=.3,
                      filename=paste0(thisFile, '.png'), dataPath=dataPath)
         write.csv(thisGps, file = paste0(thisFile, '.csv'), row.names = FALSE)
         drive_upload(paste0(thisFile, '.csv'), path=id, overwrite = TRUE)
         drive_upload(paste0(thisFile, '.png'), path=id, overwrite = TRUE)
+        drive_upload(paste0(thisFile,'_QAQC.png'), path=id, overwrite=TRUE)
     }
+}
+
+plotGpsQAQC <- function(x, ylim=4, xlim=NULL, title=NULL, filename=NULL) {
+    if(is.null(xlim)) {
+        xlim <- range(x$UTC)
+    }
+    tPlot <- x %>% 
+        mutate(tLabel = ifelse(tDiff > ylim, round(tDiff,0), NA),
+               tDiff = ifelse(tDiff > ylim, ylim, tDiff)) %>% 
+        ggplot(aes(x=UTC,y=tDiff, col=Device)) + 
+        geom_line(show.legend=FALSE) +
+        ylim(0, ylim) + 
+        xlim(xlim[1], xlim[2]) +
+        geom_vline(xintercept = xlim) +
+        geom_text(aes(x=UTC, y=tDiff, label=tLabel), show.legend=FALSE) +
+        ylab('Hours Apart') +
+        facet_wrap('Device', ncol=1)
+    kPlot <- x %>% 
+        ggplot(aes(x=UTC,y=knots, col=Device)) + 
+        geom_line() +
+        ylim(0, 3) +
+        xlim(xlim[1], xlim[2]) +
+        geom_vline(xintercept = xlim) +
+        # geom_text(aes(x=UTC, y=tDiff, label=tLabel), show.legend=FALSE) +
+        ylab('Avg Knots') + 
+        facet_wrap('Device', ncol=1)
+    out <- tPlot + kPlot
+    out <- out + 
+        plot_annotation(title=title,
+                        theme= theme(plot.title = element_text(hjust = 0.45)))
+    if(is.null(filename)) {
+        return(out)
+    }
+    ggsave(filename, plot=out, width=10, height=10, units='in', dpi=200)
+    filename
+}
+# making combined extra mesaurements
+mixExtra <- function(x) {
+    result <- bind_rows(lapply(split(x, x$DeviceName), function(d) {
+        tmp <- addGpsExtra(d)
+        tmp$Device <- d$DeviceName[1]
+        tmp
+    }))
+    comb <- addGpsExtra(x)
+    comb$Device <- 'Combined'
+    comb$knots <- calcKnots(comb)
+    out <- bind_rows(result, comb)
+    out$Device <- factor(out$Device, levels=c(unique(result$Device), 'Combined'))
+    out
+}
+# adding time diff and diff based groups
+addGpsExtra <- function(x, hours=3) {
+    if(nrow(x) == 1) {
+        x$tDiff <- 0
+        x$tGroup <- 1
+        return(x)
+    }
+    x$tDiff <- NA
+    x$tDiff[2:nrow(x)] <- as.numeric(difftime(x$UTC[2:nrow(x)], x$UTC[1:(nrow(x)-1)], units='hours'))
+    x$tDiff[1] <- 0
+    x$tGroup <- NA
+    gIx <- 1
+    for(i in 1:nrow(x)) {
+        if(x$tDiff[i] > hours) {
+            gIx <- gIx + 1
+        }
+        x$tGroup[i] <- gIx
+    }
+    x
 }
 
 checkNMS <- function(gps, nmsData) {
