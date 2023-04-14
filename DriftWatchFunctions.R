@@ -1774,7 +1774,9 @@ createOppData <- function(db, depDet) {
 # would keep overriding
 # add drift names to this if we want db to differ from deployDetails sheet
 DONTCHANGEDRIFT <- c(paste0('ADRIFT_00', 1:9),
-                     paste0('ADRIFT_0', 10:11))
+                     paste0('ADRIFT_0', 10:11),
+                     paste0('PASCAL_', c('009', '022', '023', '026', '029'))
+)
 
 updateNaVals <- function(db, table = 'deploymentData', toCheck) {
     if(nrow(toCheck) == 0) {
@@ -1856,6 +1858,7 @@ doTextUpdates <- function(db) {
         }
         toEmail <- contact$Email[contact$Id == sched$Recipient_Id[i]]
         cat('\nTrying text schedule row', i, 'sent to:', toEmail)
+        cat('\nMessage:', message)
         emOut <- sendTurboEmail(to=toEmail, message=message)
         cat('\nResponse:', emOut$message)
     }
@@ -1971,8 +1974,8 @@ updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOis
                     title=paste0(d, ' QAQC'))
         thisGps <- ncToData(thisGps, nc=file.path(dataPath, 'etopo180.nc'),
                             keepMatch = FALSE, progress=FALSE)
-        thisGps <- rename(thisGps, depth = altitude_mean)
-        thisGps$depth <- thisGps$depth * -1
+        thisGps <- rename(thisGps, seadepth = altitude_mean)
+        thisGps$seadepth <- thisGps$seadepth * -1
         cat('\nWriting GPS CSV for drift', d, '...')
         plotAPIDrift(thisGps, current=FALSE, wca=FALSE, bathy=TRUE, sl=FALSE, nms=TRUE, xlim=.3, ylim=.3,
                      filename=paste0(thisFile, '.png'), dataPath=dataPath)
