@@ -443,7 +443,7 @@ calcKnots <- function(x) {
     ix1 <- 1:(nrow(x)-1)
     ix2 <- 2:(nrow(x))
     # diff <- sqrt((x$Latitude[ix1] - x$Latitude[ix2])^2 +
-                     # (x$Longitude[ix1] - x$Longitude[ix2])^2)
+    # (x$Longitude[ix1] - x$Longitude[ix2])^2)
     diff <- distGeo(
         matrix(c(x$Longitude[ix1], x$Latitude[ix1]), ncol=2),
         matrix(c(x$Longitude[ix2], x$Latitude[ix2]), ncol=2))
@@ -502,7 +502,7 @@ dropBySpeed <- function(x, knots=4) {
 plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE, sl=TRUE, wca=TRUE,
                          nms=FALSE, current=4, wind=FALSE, swell=FALSE, wave=FALSE, depth=0, time=nowUTC(),
                          size = 4, xlim=1, ylim=.5, labelBy='DriftName', title=NULL,
-                         dataPath='PlottingData') {
+                         dataPath='PlottingData', simple=FALSE) {
     if(is.null(etopo)) {
         etopo <- file.path(dataPath, 'etopo180.nc')
     } else {
@@ -694,6 +694,8 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
                                xyVars = c('Thgt', 'Tdir'), width=width,
                                radial=TRUE, cart=FALSE, dirFrom=TRUE)
     }
+    myScaleBathy(bathyData, deg=diff(xlim) * .2, x= 'bottomleft', inset=5, col='white')
+    
     
     # Plotting drift and start/end points
     symbs <- c(48:57, 35:38, 61:64, 131, 132, 163, 165, 167, 169, 171, 174, 97:122)
@@ -705,13 +707,21 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
         thisDrift <- arrange(thisDrift, UTC)
         lines(x=thisDrift$Longitude, y=thisDrift$Latitude, col='black', lwd=2)
         lines(x=thisDrift$Longitude, y=thisDrift$Latitude, col='grey', lwd=1, lty=5)
-        # start/end markers
-        points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=15, cex=1.2)
-        end <- which.max(thisDrift$UTC)
-        points(x=thisDrift$Longitude[end], thisDrift$Latitude[end], pch=17, col='grey', cex=1.2)
-        # labels
-        points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=mapLabs[d], col='white', cex=.6)
-        points(x=thisDrift$Longitude[end], y=thisDrift$Latitude[end], pch=mapLabs[d], col='black', cex=.6)
+        if(isFALSE(simple)) {
+            # start/end markers
+            points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=15, cex=1.2)
+            end <- which.max(thisDrift$UTC)
+            points(x=thisDrift$Longitude[end], thisDrift$Latitude[end], pch=17, col='grey', cex=1.2)
+            # labels
+            points(x=thisDrift$Longitude[start], y=thisDrift$Latitude[start], pch=mapLabs[d], col='white', cex=.6)
+            points(x=thisDrift$Longitude[end], y=thisDrift$Latitude[end], pch=mapLabs[d], col='black', cex=.6)
+        }
+    }
+    if(isTRUE(simple)) {
+        if(is.null(filename)) {
+            return(drift)
+        }
+        return(filename)
     }
     
     # Plot port cities and other POI
@@ -748,7 +758,7 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
                                    title='      Depth (m)', cex=useCex, tCex=.67)
     }
     
-    myScaleBathy(bathyData, deg=diff(xlim) * .2, x= 'bottomleft', inset=5, col='white')
+    # myScaleBathy(bathyData, deg=diff(xlim) * .2, x= 'bottomleft', inset=5, col='white')
     if(is.null(filename)) {
         return(drift)
     }
@@ -975,11 +985,11 @@ matchWcofsData <- function(data, wcFile, depth=0) {
     xIx <- sapply(data$Longitude, function(x) {
         which.min(abs(wcofs$Longitude - x))[1]
     })
-
+    
     yIx <- sapply(data$Latitude, function(x) {
         which.min(abs(wcofs$Latitude - x))[1]
     })
-
+    
     for(i in 1:nrow(data)) {
         data$u_eastward[i] <- wcofs$u_eastward[xIx[i], yIx[i]]
         data$v_northward[i] <- wcofs$v_northward[xIx[i], yIx[i]]
@@ -1553,7 +1563,7 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE, outDir=
                              error = function(e) {
                                  message(e)
                                  NULL
-                                 })
+                             })
         outFiles <- c(outFiles, thisPlot)
     }
     outFiles
@@ -1968,10 +1978,10 @@ updateGpsCsv <- function(db, csvDir='GPS_CSV', id='1xiayEHbx30tFumMagMHJ1uhfmOis
         }
         thisFile <- file.path(csvDir, paste0(d, '_GPS'))
         qaqc <- plotGpsQAQC(mixExtra(thisGps), ylim=4, 
-                    xlim=c(dep$Start[dep$DriftName == d],
-                           dep$End[dep$DriftName == d]),
-                    filename = paste0(thisFile, '_QAQC.png'),
-                    title=paste0(d, ' QAQC'))
+                            xlim=c(dep$Start[dep$DriftName == d],
+                                   dep$End[dep$DriftName == d]),
+                            filename = paste0(thisFile, '_QAQC.png'),
+                            title=paste0(d, ' QAQC'))
         thisGps <- ncToData(thisGps, nc=file.path(dataPath, 'etopo180.nc'),
                             keepMatch = FALSE, progress=FALSE)
         thisGps <- rename(thisGps, seadepth = altitude_mean)
