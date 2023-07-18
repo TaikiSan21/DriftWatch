@@ -85,6 +85,10 @@ if(nrow(recentDrifts) > 0) {
 } else {
     twoWeekPlot <- NULL
 }
+
+cat('\nUploading drift plots...')
+doGdriveUpload(c(driftPlots, twoWeekPlot), paste0(gdriveDest, 'DriftPlots/'))
+
 cat('\nMaking test deployment worksheet plots...')
 testDepPlots <- character(0)
 if(hycomOK) {
@@ -110,9 +114,7 @@ if(wcofsOK) {
 # cccPlotHFRADAR <- plotAPIDrift(ccc, filename = 'AllCCC_HFRADAR.png', current=3)
 # driftPlots <- c(driftPlots, cccPlotHYCOM, cccPlotHFRADAR)
 
-cat('\nUploading plots to drive...')
-doGdriveUpload(c(driftPlots, twoWeekPlot), paste0(gdriveDest, 'DriftPlots/'))
-
+cat('\nUploading test plots to drive...')
 doGdriveUpload(testDepPlots, paste0(gdriveDest, 'TestDeploymentPlots/'))
 # with_drive_quiet({
 #     allPngs <- list.files(pattern='png$', full.names = TRUE, recursive = FALSE)
