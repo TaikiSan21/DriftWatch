@@ -428,6 +428,13 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
         thisGps <- arrange(thisGps, UTC)
         thisGps$DriftName <- x
         thisGps$DeploymentSite <- unique(thisDep$DeploymentSite)
+        thisGps$bearing <-
+            c(bearing(matrix(c(thisGps$Longitude[1:(nrow(thisGps)-1)],
+                             thisGps$Latitude[1:(nrow(thisGps)-1)]), ncol=2),
+                    matrix(c(thisGps$Longitude[2:nrow(thisGps)],
+                             thisGps$Latitude[2:nrow(thisGps)]), ncol=2)),
+              NA)
+        thisGps$bearing <- thisGps$bearing %% 360
         thisGps
     }))
     if(is.null(days)) {
@@ -2172,6 +2179,9 @@ checkNMS <- function(gps, nmsData) {
     # nmsFiles <- list.files(nmsFolder, pattern='NMS', full.names=TRUE)
     # nmsData <- lapply(nmsFiles, readRDS)
     # names(nmsData) <- gsub('([A-z]NMS).*', '\\1', basename(nmsFiles))
+    if(is.null(gps) || nrow(gps) == 0) {
+        return('No NMS entered')
+    }
     gps <- st_sfc(st_multipoint(matrix(c(gps$Longitude, gps$Latitude), ncol=2)))
     st_crs(gps) <- 4326
     nmsInt <- unlist(lapply(nmsData, function(x) {
