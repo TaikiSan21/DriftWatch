@@ -499,6 +499,109 @@ dropBySpeed <- function(x, knots=4) {
     dropBySpeed(x, knots)
 }
 
+plotBathy <- function(gps, etopo='etopo180.nc', xlim=NULL, ylim=NULL, size=4, bathy=TRUE) {
+
+    rangeDf <- makeRangeDf()
+    
+    if(!file.exists(etopo)) {
+        updateNc(etopo, 'etopo180', vars=TRUE)
+    }
+    if(is.null(xlim)) {
+        xlim <- range(gps$Longitude)
+    }
+    if(is.null(ylim)) {
+        ylim <- range(gps$Latitude)
+    }
+    if(length(xlim) == 1) {
+        xlim <- range(gps$Longitude) + c(-1, 1) * xlim
+    }
+    if(length(ylim) == 1) {
+        ylim <- range(gps$Latitude) + c(-1, 1) * ylim
+    }
+    if(xlim[2] < rangeDf$Longitude[1] ||
+       xlim[1] > rangeDf$Longitude[2] ||
+       ylim[2] < rangeDf$Latitude[1] ||
+       ylim[1] > rangeDf$Latitude[2]) {
+        cat('\nPlot is entirely out of range: ',
+            paste0(xlim, collapse=' -> '), ', ',
+            paste0(ylim, collapse=' -> '), ' vs. (-135 -> -108, 20 -> 55)',
+            sep='')
+        return(NULL)
+    }
+    xlim[xlim < rangeDf$Longitude[1]] <- rangeDf$Longitude[1]
+    xlim[xlim > rangeDf$Longitude[2]] <- rangeDf$Longitude[2]
+    ylim[ylim < rangeDf$Latitude[1]] <- rangeDf$Latitude[1]
+    ylim[ylim > rangeDf$Latitude[2]] <- rangeDf$Latitude[2]
+    
+    bathyData <- as.bathy(raster::raster(etopo))
+    
+    bathyData <- try(subsetBathy(bathyData, x=xlim, y=ylim, locator = FALSE), silent=TRUE)
+    if(inherits(bathyData, 'try-error')) {
+        cat('\nBathymetry subset failed for coordinates:',
+            paste0(xlim, collapse=' -> '), ', ',
+            paste0(ylim, collapse=' -> ')
+        )
+        return(NULL)
+    }
+    wid <- nrow(bathyData)
+    xmar <- 1.24
+    ht <- ncol(bathyData)
+    ymar <- 1.84
+    if(wid <= ht) {
+        width <- size
+        height <- size * ht / wid
+    } else {
+        height <- size
+        width <- size * wid / ht
+    }
+    # if(!is.null(filename)) {
+    #     tryOpen <- suppressWarnings(try(
+    #         png(filename, height = height + ymar, width = width + xmar, units='in',res=300)
+    #     ))
+    #     if(inherits(tryOpen, 'try-error')) {
+    #         warning('Unable to create image "', filename, '", file appears to be open already')
+    #         return(NULL)
+    #     }
+    #     on.exit(dev.off())
+    # }
+    # Setting up bathy data and legend
+    if(bathy) {
+        depthPal <- list(c(0, max(bathyData), grey(.7), grey(.9), grey(.95)),
+                         c(min(bathyData), 0, "darkblue", "lightblue"))
+        # bVals <- round(seq(from=0, to=abs(min(bathyData)), length.out=7), 0)
+        # bVals[c(2,4,6)] <- NA
+        # bCols <- colorRampPalette(c('lightblue', 'darkblue'))(7)
+    } else {
+        depthPal <- list(c(0, max(bathyData), grey(.7), grey(.9), grey(.95)),
+                         c(min(bathyData), -200, "skyblue1", 'skyblue1'),
+                         c(-200, 0,"lightblue", "lightblue"))
+        # bVals <- round(c(0, NA, 200, NA, abs(min(bathyData))), 0)
+        # bCols <- c(rep('lightblue', 3), rep('skyblue1', 2))
+    }
+    
+    # plot(bathyData, image = TRUE, land = TRUE, axes = T, lwd=0.3,
+    #      bpal = depthPal, lty=1,
+    #      shallowest.isobath=-100, deepest.isobath=-200, step=100, drawlabels=T)
+    plot(bathyData, image = TRUE, land = TRUE, axes = T, lwd=0.3,
+         bpal = depthPal, lty=1,
+         shallowest.isobath=0, deepest.isobath=0, step=100, drawlabels=F)
+    # lastLegend <- legend(x='topright', legend=c('Start', 'End', unique(drift[[labelBy]])),
+    #                      col=c('black', 'grey', rep('black', length(mapLabs))), pch=c(15, 17, mapLabs), merge=FALSE,
+    #                      seg.len = 1, cex=1, plot=FALSE)
+    # useCex <- min(.2 * diff(xlim) / lastLegend$rect$w, 1)
+    # lastLegend <- legend(x='topright', legend=c('Start', 'End', unique(drift[[labelBy]])),
+    #                      col=c('black', 'grey', rep('black', length(mapLabs))), pch=c(15, 17, mapLabs), merge=FALSE,
+    #                      seg.len = 1, cex=useCex)
+    # 
+    # if(legend) {
+    #     le
+    # }
+    # if(bathy) {
+    #     lastLegend <- myGradLegend(lastLeg=lastLegend, vals=bVals, cols=bCols,
+    #                                title='      Depth (m)', cex=useCex, tCex=.67)
+    # }
+}
+
 plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE, sl=TRUE, wca=TRUE,
                          nms=FALSE, current=4, wind=FALSE, swell=FALSE, wave=FALSE, depth=0, time=nowUTC(),
                          size = 4, xlim=1, ylim=.5, labelBy='DriftName', title=NULL,
