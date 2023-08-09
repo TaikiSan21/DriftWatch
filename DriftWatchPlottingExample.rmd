@@ -1,0 +1,66 @@
+---
+title: DriftWatch Plotting
+author: Taiki Sakai
+date: 2023-08-04
+output: html_document
+---
+
+## DriftWatch Custom Plot Example
+
+This document is a short tutorial on using the existing DriftWatch functions
+to create plots of specific drift tracks for reports or other uses. Start
+by sourcing the functions and locating the DriftWatch database (download
+this fresh from the GoogleDrive so that you have the most up-to-date GPS 
+data for each drift.
+
+```{r}
+library(here)
+source(here('DriftWatchFunctions.R'))
+db <- here('SPOTGPS_Logger.sqlite3')
+```
+
+Then use `getDbDeployment` to pull out *all* the drift track data. Note you
+can also use the `drift` argument so specify the name a specific drift or
+drifts (e.g. `drift=c('ADRIFT_034', 'ADRIFT_035')`), but for this example we'll just pull
+out all the data and filter down later.
+
+```{r}
+gps <- getDbDeployment(db)
+str(gps)
+```
+ 
+We'll filter down to just the PASCAL drifts and plot them with `plotAPIDrift` using the 
+option `simple=TRUE` and `current=FALSE`
+
+```{r}
+pascal <- filter(gps, grepl('PASCAL_', DriftName))
+plotAPIDrift(pascal, simple=TRUE, current=FALSE)
+```
+
+You'll note that the plot margins are completely wonky - these will be fixed automatically
+when saving a plot to a PNG file using the `filename` argument. This plot also has
+shipping lanes and windcall areas as orange and purple boundaries, we can remove those
+with `sl=FALSE` and `wca=FALSE`
+
+```{r}
+plotAPIDrift(pascal, simple=TRUE, current=FALSE, wca=FALSE, sl=FALSE)
+```
+
+Changing to `simple=FALSE` adds additional start/stop endpoints to the drifts, and 
+tries to label them on the legend. It also adds labels of potential points of
+interest on land to help orient the map, but this can get really crowded when 
+trying to plot a large number of drifts.
+
+```{r}
+plotAPIDrift(pascal, simple=FALSE, current=FALSE, wca=FALSE, sl=FALSE)
+```
+
+The `plotAPIDrift` function uses R's base plotting functions, so users can also add
+other bits like titles or other points to these plots using the normal base
+plotting functionality.
+
+```{r}
+plotAPIDrift(pascal, simple=TRUE, current=FALSE, wca=FALSE, sl=FALSE)
+title('TITLE!')
+points(x=-125, y=38, col='red', cex=3, pch=17)
+```

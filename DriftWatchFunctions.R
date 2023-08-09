@@ -829,9 +829,9 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     }
     if(isTRUE(simple)) {
         if(is.null(filename)) {
-            return(drift)
+            return(invisible(drift))
         }
-        return(filename)
+        return(invisible(filename))
     }
     
     # Plot port cities and other POI
@@ -870,9 +870,9 @@ plotAPIDrift <- function(drift, etopo = 'etopo180.nc', filename=NULL, bathy=TRUE
     
     # myScaleBathy(bathyData, deg=diff(xlim) * .2, x= 'bottomleft', inset=5, col='white')
     if(is.null(filename)) {
-        return(drift)
+        return(invisible(drift))
     }
-    filename
+    invisible(filename)
 }
 
 myGradLegend <- function(lastLeg=NULL, vals, cols, title, cex, tCex=.67) {
