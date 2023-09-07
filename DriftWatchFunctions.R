@@ -925,13 +925,13 @@ plotArrowGrid <- function(xLim, yLim, diff=NULL, nc, xyVars, depth=0, time=nowUT
         time <- max(tDim)
         buffer <- c(0,0, 3600)
     }
-    llg <- makeLatLongGrid(xLim, yLim, diff[1], diff[2], depth, time=time)
+    llg <- makeLatLongGrid(xLim, yLim, diff[1], diff[2], time=time)
     diff <- diff * scale
     if(grepl('WCOFS_ROMS', nc)) {
-        llg <- matchWcofsData(llg, wcFile=nc, depth=depth)
+        llg <- matchWcofsData(llg, wcofs=nc, depth=depth)
         varNames <- xyVars
     } else {
-        llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE, buffer=buffer)
+        llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE, buffer=buffer, depth=depth)
         varNames <- paste0(xyVars, '_mean')
     }
     llg <- PAMmisc:::to180(llg)
@@ -994,7 +994,7 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
                 return(TRUE)
             }
         }
-        tryDl <- wcofsToList(file=file)
+        tryDl <- wcofsToList(file=file, depth=0:200)
         if(is.null(tryDl)) {
             cat('WCOFS download failed.')
             return(FALSE)
@@ -1087,9 +1087,10 @@ checkWcUrl <- function(date=nowUTC()) {
     url
 }
 
-matchWcofsData <- function(data, wcFile, depth=0) {
-    wcofs <- readRDS(wcFile)
-    
+matchWcofsData <- function(data, wcofs, depth=0) {
+    if(is.character(wcofs)) {
+        wcofs <- readRDS(wcofs)
+    }
     data$u_eastward <- NA
     data$v_northward <- NA
     xIx <- sapply(data$Longitude, function(x) {
@@ -1099,10 +1100,12 @@ matchWcofsData <- function(data, wcFile, depth=0) {
     yIx <- sapply(data$Latitude, function(x) {
         which.min(abs(wcofs$Latitude - x))[1]
     })
-    
+    zMin <- which.min(abs(wcofs$Depth - min(depth)))
+    zMax <- which.min(abs(wcofs$Depth - max(depth)))
+    zIx <- zMin:zMax
     for(i in 1:nrow(data)) {
-        data$u_eastward[i] <- wcofs$u_eastward[xIx[i], yIx[i]]
-        data$v_northward[i] <- wcofs$v_northward[xIx[i], yIx[i]]
+        data$u_eastward[i] <- mean(wcofs$u_eastward[xIx[i], yIx[i], zIx, 1], na.rm=TRUE)
+        data$v_northward[i] <- mean(wcofs$v_northward[xIx[i], yIx[i], zIx, 1], na.rm=TRUE)
     }
     data$matchTime_mean <- wcofs$UTC
     data
@@ -1120,8 +1123,6 @@ wcofsToList <- function(time=nowUTC(), depth=0, file='WCOFS_ROMS.rds') {
     lon <- var.get.nc(nc, 'Longitude', start=c(1,1), count=c(NA, 1))
     d <- var.get.nc(nc, 'Depth', start=1, count=NA)
     data <- makeRangeDf()
-    data$u_eastward <- NA
-    data$v_northward <- NA
     allXix <- sapply(data$Longitude, function(x) {
         which.min(abs(lon - x))[1]
     })
@@ -1132,18 +1133,20 @@ wcofsToList <- function(time=nowUTC(), depth=0, file='WCOFS_ROMS.rds') {
     })
     startY <- min(allYix)
     countY <- diff(range(allYix)) + 1
-    tIx <- 1
-    startZ <- which.min(abs(d - depth))
-    
+    startZ <- which.min(abs(d - min(depth)))
+    endZ <- which.min(abs(d - max(depth)))
+    countZ <- length(startZ:endZ)
     allX <- var.get.nc(nc, 'u_eastward', start=c(startX, startY, startZ, 1),
-                       count = c(countX, countY, 1, 1))
-    allY <- var.get.nc(nc, 'v_northward', start=c(startX, startY, 1, 1),
-                       count = c(countX, countY, 1, 1))
+                       count = c(countX, countY, countZ, 1),
+                       collapse=FALSE)
+    allY <- var.get.nc(nc, 'v_northward', start=c(startX, startY, startZ, 1),
+                       count = c(countX, countY, countZ, 1),
+                       collapse=FALSE)
     ncTime <- var.get.nc(nc, 'ocean_time', start=1, count=1)
     ncTime <- as.POSIXct(ncTime, origin='2016-01-01 00:00:00', tz='UTC')
     result <- list(Latitude=lat[startY:(startY+countY-1)], 
                    Longitude=lon[startX:(startX+countX-1)], 
-                   Depth = d,
+                   Depth = d[startZ:endZ],
                    u_eastward = allX,
                    v_northward = allY,
                    UTC = ncTime)
@@ -1158,7 +1161,10 @@ getWcofsTime <- function(time=nowUTC()) {
     day <- day(now)
     hour <- hour(now)
     webDay <- day(now())
-    if(day > webDay) {
+    # problems if UTC day is greater than local day bc timezone
+    hourDiff <- as.numeric(abs(difftime(time, now(), units='hours')))
+    if(hourDiff < 12 &&
+       day > webDay) {
         hour <- hour + 24 * (day - webDay)
         day <- webDay
     }
