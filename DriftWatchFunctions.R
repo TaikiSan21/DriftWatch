@@ -1766,12 +1766,31 @@ sheetToDbDepFormat <- function(x, new=FALSE) {
 }
 
 doGdriveUpload <- function(files, destination, modHours=1) {
+    backoffs <- c(1, 2, 4, 8, 16)
+    backIx <- 1
     with_drive_quiet({
         for(i in seq_along(files)) {
             modtime <- file.info(files[i])$mtime
             diff <- as.numeric(difftime(Sys.time(), modtime, units='hours'))
             if(diff > modHours) next
-            drive_upload(files[i], path=destination, overwrite=TRUE)
+            # Trying exp backoff for 500 errors
+            tryUp <- try(drive_upload(files[i], path=destination, overwrite=TRUE))
+            if(inherits(tryUp, 'try-error') &&
+               grepl('Server error: (500)', tryUp)) {
+                while(backIx <= length(backoffs)) {
+                    cat('\n500 error - sleeping for', backoffs[backIx])
+                    randTime <- runif(1) / 10
+                    Sys.sleep(backoffs[backIx] + randTime)
+                    tryUp <- try(drive_upload(files[i], path=destination, overwrite=TRUE))
+                    # still bad, wait more
+                    if(inherits(tryUp, 'try-error')) {
+                        backIx <- backIx + 1
+                    }
+                    # if worked, reset backoff and break
+                    backIx <- 1
+                    break
+                }
+            }
         }
     })
 }
