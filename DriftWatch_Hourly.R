@@ -79,6 +79,7 @@ if(wcofsOK) {
     driftPlots <- c(driftPlots,
                     doDriftPlots(db, verbose=T, current=6, outDir = './DriftPlots/', dataPath = 'PlottingData'))
 }
+combDrift <- combineCurrents(driftPlots, outDir='./DriftPlots/')
 cat('\nMaking last 2 weeks plot...')
 
 noPlot <- c('ADRIFT_004', 'ADRIFT_008')
@@ -92,7 +93,7 @@ if(nrow(recentDrifts) > 0) {
 }
 
 cat('\nUploading drift plots...')
-doGdriveUpload(c(driftPlots, twoWeekPlot), paste0(gdriveDest, 'DriftPlots/'))
+doGdriveUpload(c(combDrift, twoWeekPlot), paste0(gdriveDest, 'DriftPlots/'))
 
 cat('\nMaking test deployment worksheet plots...')
 testDepPlots <- character(0)
@@ -114,6 +115,7 @@ if(wcofsOK) {
                       plotTestDeployments(current=6, driftData=getDbDeployment(db, verbose=FALSE), 
                                           outDir = './TestDeploymentPlots/', dataPath = 'PlottingData'))
 }
+combTestDep <- combineCurrents(testDepPlots, outDir='./TestDeploymentPlots/')
 # cat('\nMaking CCC plots...')
 # ccc <- getDbDeployment(db, drift=paste0('ADRIFT_0', 19:26))
 # cccPlotHYCOM <- plotAPIDrift(ccc, filename = 'AllCCC_HYCOM.png', current=4)
@@ -121,7 +123,7 @@ if(wcofsOK) {
 # driftPlots <- c(driftPlots, cccPlotHYCOM, cccPlotHFRADAR)
 
 cat('\nUploading test plots to drive...')
-doGdriveUpload(testDepPlots, paste0(gdriveDest, 'TestDeploymentPlots/'))
+doGdriveUpload(combTestDep, paste0(gdriveDest, 'TestDeploymentPlots/'))
 # with_drive_quiet({
 #     allPngs <- list.files(pattern='png$', full.names = TRUE, recursive = FALSE)
 #     for(i in seq_along(allPngs)) {

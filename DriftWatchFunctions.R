@@ -21,6 +21,9 @@ suppressPackageStartupMessages({
     library(RNetCDF)
     library(ggplot2)
     library(patchwork)
+    library(png)
+    library(grid)
+    library(gridExtra)
     library(stringr)
 })
 # Updated 1-19-22 post collapse v 1.0
@@ -29,6 +32,7 @@ suppressPackageStartupMessages({
 # Updated 6-10-2022 Trying to sort out crashes on first load of the day and custom plots on test dep sheet
 # Updated 6-14-2022 DB now has Lonestar names instead of dumb ID
 # Updated 9-22-2022 To do GPS CSV. Also moved GPS downloads to 30 minutes w/texting
+# Updated 10-10-2023 Forgot these, but currently combining diff currents into 1 plot
 
 # this stores api keys and PWs for things - not to be shared
 secrets <- read_yaml('.secrets/secrets.yaml')
@@ -1342,15 +1346,15 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
             }
         }
         curName <- switch(as.character(current),
-                          '4' = '_HYCOM',
-                          '3' = '_HFRADAR',
-                          '6' = '_WCOFS'
+                          '4' = 'HYCOM',
+                          '3' = 'HFRADAR',
+                          '6' = 'WCOFS'
         )
         if(is.null(thisDrift$DeploymentSite) ||
            is.na(unique(thisDrift$DeploymentSite))) {
-            thisFile <- paste0(i, curName, '.png')
+            thisFile <- paste0(i, '_', curName, '.png')
         } else {
-            thisFile <- paste0(i, curName, '_',
+            thisFile <- paste0(i, '_', curName, '_',
                                unique(thisDrift$DeploymentSite), '.png')
         }
         thisFile <- file.path(outDir, thisFile)
@@ -1372,7 +1376,7 @@ plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
         outFiles <- c(outFiles,
                       plotAPIDrift(thisDrift, etopo=etopo, labelBy = 'DriftName',
                                    filename=thisFile, current=current, dataPath = dataPath,
-                                   xlim=lonr, ylim=latr, title=gsub('_', '', curName))
+                                   xlim=lonr, ylim=latr, title=curName)
         )
     }
     outFiles
@@ -1662,12 +1666,12 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE, outDir=
             fname <- paste0(fname, '_', thisDep$DeploymentSite[1])
         }
         curName <- switch(as.character(current),
-                          '4' = 'HYCOM_',
-                          '3' = 'HFRADAR_',
-                          '6' = 'WCOFS_',
+                          '4' = 'HYCOM',
+                          '3' = 'HFRADAR',
+                          '6' = 'WCOFS',
                           ''
         )
-        fname <- paste0(curName, fname)
+        fname <- paste0(curName, '_', fname)
         fname <- file.path(outDir, paste0(thisDep$DriftName[1], '_', fname, '.png'))
         if(file.exists(fname)) {
             modtime <- file.info(fname)$mtime
@@ -1677,7 +1681,8 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE, outDir=
         if(verbose) {
             cat('\nPlotting drift', thisDep$DriftName[1])
         }
-        thisPlot <- tryCatch(plotAPIDrift(thisDep, filename=fname, current=current, dataPath=dataPath),
+        thisPlot <- tryCatch(plotAPIDrift(thisDep, filename=fname, current=current, dataPath=dataPath, 
+                                          title=curName),
                              error = function(e) {
                                  message(e)
                                  NULL
@@ -2238,4 +2243,33 @@ createSanctSummary <- function(db, nmsFolder) {
             collapse = ', ')
     }
     depData
+}
+
+createCombPlot <- function(images, filename, wide=TRUE) {
+    grobs <- lapply(images, function(x) {
+        rasterGrob(readPNG(x))
+    })
+    if(isTRUE(wide)) {
+        combined <- arrangeGrob(grobs=grobs, nrow=1)
+        ggsave(filename, combined, width=ncol(grobs[[1]]$raster) * length(combined$grobs),
+               height = nrow(grobs[[1]]$raster), units='px')
+    } 
+    if(isFALSE(wide)) {
+        combined <- arrangeGrob(grobs=grobs, ncol=1)
+        ggsave(filename, combined, width=ncol(grobs[[1]]$raster),
+               height = nrow(grobs[[1]]$raster) * length(combined$grobs), units='px')
+    }
+    filename
+}
+
+combineCurrents <- function(plots, outDir='.') {
+    pat <- '(.*)_(HFRADAR|HYCOM|WCOFS)_(.*png$)'
+    basenames <- gsub(pat, '\\1_\\3', plots)
+    outfiles <- character(0)
+    for(base in unique(basenames)) {
+        thisPlots <- plots[basenames %in% base]
+        outfiles <- c(outfiles,
+                      createCombPlot(thisPlots, filename=file.path(outDir, basename(base)), wide=TRUE))
+    }
+    outfiles
 }
