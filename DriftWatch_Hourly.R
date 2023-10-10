@@ -68,11 +68,16 @@ if(inherits(wcofsOK, 'try-error') |
 cat('\nMaking individual drift plots...')
 driftPlots <- character(0)
 if(hycomOK) {
-    driftPlots <- doDriftPlots(db, verbose=T, current=4, outDir='./DriftPlots/', dataPath = 'PlottingData')
+    driftPlots <- c(driftPlots,
+                    doDriftPlots(db, verbose=T, current=4, outDir='./DriftPlots/', dataPath = 'PlottingData'))
 }
 if(hfradarOK) {
     driftPlots <- c(driftPlots,
                     doDriftPlots(db, verbose=T, current=3, outDir = './DriftPlots/', dataPath = 'PlottingData'))
+}
+if(wcofsOK) {
+    driftPlots <- c(driftPlots,
+                    doDriftPlots(db, verbose=T, current=6, outDir = './DriftPlots/', dataPath = 'PlottingData'))
 }
 cat('\nMaking last 2 weeks plot...')
 
@@ -93,8 +98,9 @@ cat('\nMaking test deployment worksheet plots...')
 testDepPlots <- character(0)
 if(hycomOK) {
     cat('\nWith HYCOM...')
-    testDepPlots <- plotTestDeployments(current=4, driftData=getDbDeployment(db, verbose=FALSE),
-                                        outDir = './TestDeploymentPlots/', dataPath = 'PlottingData')
+    testDepPlots <- c(testDepPlots,
+                      plotTestDeployments(current=4, driftData=getDbDeployment(db, verbose=FALSE),
+                                        outDir = './TestDeploymentPlots/', dataPath = 'PlottingData'))
 }
 if(hfradarOK) {
     cat('\nWith HFRADAR...')

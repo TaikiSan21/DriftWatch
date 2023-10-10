@@ -928,7 +928,8 @@ plotArrowGrid <- function(xLim, yLim, diff=NULL, nc, xyVars, depth=0, time=nowUT
     llg <- makeLatLongGrid(xLim, yLim, diff[1], diff[2], time=time)
     diff <- diff * scale
     if(grepl('WCOFS_ROMS', nc)) {
-        llg <- matchWcofsData(llg, wcofs=nc, depth=depth)
+        # llg <- matchWcofsData(llg, wcofs=nc, depth=depth)
+        llg <- matchWcofsData(llg, wcofs=nc, depth=30:100)
         varNames <- xyVars
     } else {
         llg <- ncToData(llg, nc, FUN=mean,verbose = FALSE, progress=FALSE, buffer=buffer, depth=depth)
@@ -1663,6 +1664,7 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE, outDir=
         curName <- switch(as.character(current),
                           '4' = 'HYCOM_',
                           '3' = 'HFRADAR_',
+                          '6' = 'WCOFS_',
                           ''
         )
         fname <- paste0(curName, fname)
