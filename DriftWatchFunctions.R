@@ -434,9 +434,9 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
         thisGps$DeploymentSite <- unique(thisDep$DeploymentSite)
         thisGps$bearing <-
             c(bearing(matrix(c(thisGps$Longitude[1:(nrow(thisGps)-1)],
-                             thisGps$Latitude[1:(nrow(thisGps)-1)]), ncol=2),
-                    matrix(c(thisGps$Longitude[2:nrow(thisGps)],
-                             thisGps$Latitude[2:nrow(thisGps)]), ncol=2)),
+                               thisGps$Latitude[1:(nrow(thisGps)-1)]), ncol=2),
+                      matrix(c(thisGps$Longitude[2:nrow(thisGps)],
+                               thisGps$Latitude[2:nrow(thisGps)]), ncol=2)),
               NA)
         thisGps$bearing <- thisGps$bearing %% 360
         thisGps
@@ -511,7 +511,7 @@ dropBySpeed <- function(x, knots=4) {
 }
 
 plotBathy <- function(gps, etopo='etopo180.nc', xlim=NULL, ylim=NULL, size=4, bathy=TRUE) {
-
+    
     rangeDf <- makeRangeDf()
     
     if(!file.exists(etopo)) {
@@ -2011,8 +2011,13 @@ doTextUpdates <- function(db) {
         toEmail <- contact$Email[contact$Id == sched$Recipient_Id[i]]
         cat('\nTrying text schedule row', i, 'sent to:', toEmail)
         cat('\nMessage:', message)
-        emOut <- sendTurboEmail(to=toEmail, message=message)
-        cat('\nResponse:', emOut$message)
+        if(toEmail == 'SWFSCinReach') {
+            emOut <- sendInreachText(message = message)
+            cat('\nResponse:', emOut)
+        } else {
+            emOut <- sendTurboEmail(to=toEmail, message=message)
+            cat('\nResponse:', emOut$message)
+        }
     }
 }
 
@@ -2032,6 +2037,46 @@ sendTurboEmail <- function(to, message) {
     response <- fromJSON(rawToChar(tryEmail$content))
     response
 }
+
+sendInreachText <- function(message, imei='301434030691620') {
+    user <- secrets$inreach_user
+    pw <- secrets$inreach_pw
+    url <- 'https://explore.garmin.com/ipcinbound/V1/Messaging.svc/Message'
+    newMessage <- inrTemplate
+    newMessage$Messages[[1]]$Timestamp <- paste0('/Date(', round(as.numeric(nowUTC()), 0)*1e3, ')/')
+    newMessage$Messages[[1]]$Message <- message
+    newMessage$Messages[[1]]$Recipients <- list(as.character(imei))
+    tryInreach <- POST(url=url,
+                       body = toJSON(newMessage),
+                       config = authenticate(user, pw),
+                       content_type('application/json'))
+    response <- rawToChar(tryInreach$content)
+    response
+    # tryInreach
+}
+
+inrTemplate <- 
+    list(
+        Messages = list(
+            list(
+                Sender = 'taiki.sakai@noaa.gov',
+                Recipients = list('301434030691620'),
+                Timestamp = "/Date(1647338836000)/",
+                Message = 'sent at 109pm'
+                # ReferencePoint = list(
+                #     LocationType = 'GPSLocation',
+                #     Altitude = 0,
+                #     Speed = 0,
+                #     Course = 0,
+                #     Coordinate = list(
+                #         Latitude = 32,
+                #         Longitude = -116
+                #     ),
+                #     Label = 'Test'
+                # )
+            )
+        )
+    )
 
 fmtCoord <- function(x, mode=c('decidegree', 'dms', 'deciminute')) {
     switch(match.arg(mode),
