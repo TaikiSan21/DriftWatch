@@ -22,7 +22,7 @@ You will also need to set up GoogleDrive authentication so that R
 can access our Gddrive using your credentials. You can do this with
 
 ```{r}
-googledrive::drive_auth(cache=TRUE)
+googledrive::drive_auth(cache='.secrets')
 ```
 
 # Set up task scheduler
