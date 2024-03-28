@@ -1,7 +1,7 @@
 suppressPackageStartupMessages({
     library(dplyr)
     library(RSQLite)
-    library(plotKML)
+    # library(plotKML)
     library(xml2)
     library(marmap)
     library(sf)
@@ -289,56 +289,56 @@ spotXmlToDf <- function(x) {
     df
 }
 
-gpxToDf <- function(x) {
-    gpx <- plotKML::readGPX(x)
-    format <- '%Y-%m-%dT%H:%M:%SZ'
-    result <- do.call(rbind, lapply(gpx$tracks, function(x) {
-        tmp <- vector('list', length = length(x))
-        for(i in seq_along(x)) {
-            df <- x[[i]][, c('lon', 'lat', 'time')]
-            df$DeviceName <- names(x)[i]
-            tmp[[i]] <- df
-        }
-        bind_rows(tmp)
-    }))
-    colnames(result) <- c('Longitude', 'Latitude', 'UTC', 'DeviceName')
-    result$UTC <- as.POSIXct(result$UTC, tz='UTC', format=format)
-    badCoords <- result$Latitude < -90 | result$Longitude < -180
-    result[!badCoords, ]
-}
+# gpxToDf <- function(x) {
+#     gpx <- plotKML::readGPX(x)
+#     format <- '%Y-%m-%dT%H:%M:%SZ'
+#     result <- do.call(rbind, lapply(gpx$tracks, function(x) {
+#         tmp <- vector('list', length = length(x))
+#         for(i in seq_along(x)) {
+#             df <- x[[i]][, c('lon', 'lat', 'time')]
+#             df$DeviceName <- names(x)[i]
+#             tmp[[i]] <- df
+#         }
+#         bind_rows(tmp)
+#     }))
+#     colnames(result) <- c('Longitude', 'Latitude', 'UTC', 'DeviceName')
+#     result$UTC <- as.POSIXct(result$UTC, tz='UTC', format=format)
+#     badCoords <- result$Latitude < -90 | result$Longitude < -180
+#     result[!badCoords, ]
+# }
 
-addGpxToDb <- function(gpx, db) {
-    gpxDf <- gpxToDf(gpx)
-    con <- dbConnect(db, drv=SQLite())
-    on.exit(dbDisconnect(con))
-    dbDf <- dbReadTable(con, 'gpsData')
-    dbDf$UTC <- pgDateToPosix(dbDf$UTC)
-    isDupe <- checkDupeCoord(gpxDf, dbDf)
-    if(!all(isDupe)) {
-        toAdd <- gpxDf[!isDupe, ]
-        gpsAppend <- dbDf[FALSE, ]
-        gpsAppend[1:nrow(toAdd), ] <- NA
-        gpsAppend$Latitude <- toAdd$Latitude
-        gpsAppend$Longitude <- toAdd$Longitude
-        gpsAppend$DeviceName <- toAdd$DeviceName
-        gpsAppend <- arrange(gpsAppend, UTC)
-        gpsAppend$UTC <- format(toAdd$UTC, format='%Y-%m-%d %H:%M:%S')
-        ixPoss <- 1:(nrow(dbDf) + nrow(toAdd))
-        ixPoss <- ixPoss[!(ixPoss %in% dbDf$Id)]
-        gpsAppend$Id <- ixPoss[1:nrow(toAdd)]
-        dbAppendTable(con, 'gpsData', gpsAppend)
-    } else {
-        gpsAppend <- NULL
-    }
-    dbLog <- dbReadTable(con, 'gpsLogger')
-    logId <- ifelse(nrow(dbLog) == 0, 1, max(dbLog$Id) + 1)
-    now <- nowUTC()
-    logAppend <- data.frame(Id = logId, UTC = format(now, format='%Y-%m-%d %H:%M:%S'),
-                            RowsAdded = ifelse(all(isDupe), 0, nrow(gpsAppend)),
-                            Source = 'GPX')
-    dbAppendTable(con, 'gpsLogger', logAppend)
-    gpsAppend
-}
+# addGpxToDb <- function(gpx, db) {
+#     gpxDf <- gpxToDf(gpx)
+#     con <- dbConnect(db, drv=SQLite())
+#     on.exit(dbDisconnect(con))
+#     dbDf <- dbReadTable(con, 'gpsData')
+#     dbDf$UTC <- pgDateToPosix(dbDf$UTC)
+#     isDupe <- checkDupeCoord(gpxDf, dbDf)
+#     if(!all(isDupe)) {
+#         toAdd <- gpxDf[!isDupe, ]
+#         gpsAppend <- dbDf[FALSE, ]
+#         gpsAppend[1:nrow(toAdd), ] <- NA
+#         gpsAppend$Latitude <- toAdd$Latitude
+#         gpsAppend$Longitude <- toAdd$Longitude
+#         gpsAppend$DeviceName <- toAdd$DeviceName
+#         gpsAppend <- arrange(gpsAppend, UTC)
+#         gpsAppend$UTC <- format(toAdd$UTC, format='%Y-%m-%d %H:%M:%S')
+#         ixPoss <- 1:(nrow(dbDf) + nrow(toAdd))
+#         ixPoss <- ixPoss[!(ixPoss %in% dbDf$Id)]
+#         gpsAppend$Id <- ixPoss[1:nrow(toAdd)]
+#         dbAppendTable(con, 'gpsData', gpsAppend)
+#     } else {
+#         gpsAppend <- NULL
+#     }
+#     dbLog <- dbReadTable(con, 'gpsLogger')
+#     logId <- ifelse(nrow(dbLog) == 0, 1, max(dbLog$Id) + 1)
+#     now <- nowUTC()
+#     logAppend <- data.frame(Id = logId, UTC = format(now, format='%Y-%m-%d %H:%M:%S'),
+#                             RowsAdded = ifelse(all(isDupe), 0, nrow(gpsAppend)),
+#                             Source = 'GPX')
+#     dbAppendTable(con, 'gpsLogger', logAppend)
+#     gpsAppend
+# }
 
 nowUTC <- function() {
     now <- Sys.time()
