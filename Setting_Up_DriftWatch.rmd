@@ -1,7 +1,9 @@
 # Downloads
 
-Download all contents of "DriftWatch/PlottingData"
-Download SPOTGPS_Logger.sqlite3, DriftWatchFunctions.R, and DriftWatch_Hourly.R from "DriftWatch"
+Clone the DriftWatch repository https://github.com/TaikiSan21/DriftWatch
+
+Download SPOTGPS_Logger.sqlite3 from the DriftWatch GoogleDrive
+https://drive.google.com/drive/u/0/folders/1AnL8LXi9deg5gQpCICp3rnn5YfTb6iSz
 
 # Folder structure
 Create a "DriftWatch" folder and place all these files and folders within it
@@ -15,6 +17,7 @@ listed at the top of the file
 # Change to use your Google account
 
 In "DriftWatch_Hourly.R", change line 29 from my email to your email.
+In "DriftWatch_30min.R" change line 16 to your email.
 You will also need to set up GoogleDrive authentication so that R
 can access our Gddrive using your credentials. You can do this with
 
@@ -35,6 +38,13 @@ library(taskscheduleR)
 taskscheduler_create(taskname = "DriftWatch_Hourly", rscript = normalizePath('DriftWatch_Hourly.R'), 
                      schedule = "HOURLY", starttime = format(Sys.time() + 62, "%H:%M"),
                      startdate = format(Sys.Date(), '%m-%d-%Y'))
+
+# for thsi one will need to manually change timing to 30 minutes, see below comment on adjusting
+taskscheduler_create(taskname = "DriftWatch_30min", rscript = normalizePath('DriftWatch_30min.R'), 
+                     schedule = "HOURLY", starttime = format(Sys.time() + 62, "%H:%M"),
+                     startdate = format(Sys.Date(), '%m-%d-%Y'))
+
+
 ```
 
 # Adjusting or ending the task scheduler

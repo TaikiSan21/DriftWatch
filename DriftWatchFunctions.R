@@ -410,6 +410,9 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
     }
     allGps <- bind_rows(lapply(deployment$DriftName, function(x) {
         thisDep <- deployment[deployment$DriftName == x, ]
+        if(thisDep$Start == thisDep$End) {
+            return(NULL)
+        }
         if(allZero(thisDep$End)) {
             thisDep$End <- thisDep$End + 24*3600 - 1
         }
@@ -1059,7 +1062,7 @@ updateNc <- function(file='RTOFScurrent.nc', id, vars, rerun=TRUE) {
     edi <- varSelect(edi, vars)
     tryCatch({
         cat('Downloading file', file, '...\n')
-        downloadEnv(rangeDf, edi, fileName=file, buffer=c(.1, .1, 0), progress = FALSE)
+        downloadEnv(rangeDf, edi, fileName=file, buffer=c(.1, .1, 0), progress = FALSE, timeout=240)
         TRUE
     },
     error = function(e) {
