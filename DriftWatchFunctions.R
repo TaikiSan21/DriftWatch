@@ -1304,7 +1304,7 @@ plotTestDeployments <- function(sheet='1Gwjaoq0l7UavwF_xuajvMMRzn_5YL-l25bpJNcUP
                                 driftData=NULL,
                                 outDir='.') {
     with_drive_quiet({
-        drive_download(sheet, path=file, overwrite = TRUE)
+        drive_download(as_id(sheet), path=file, overwrite = TRUE)
     })
     deps <- readr::read_csv(file,
                             col_types=list(col_double(), col_double(),
