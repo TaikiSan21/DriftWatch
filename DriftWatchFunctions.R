@@ -1296,7 +1296,7 @@ recentBuoySummary <- function(db, skip=NULL, file=NULL, window=6, dataPath='.', 
     outs
 }
 
-plotTestDeployments <- function(sheet='~/DriftWatch/TestDeployments',
+plotTestDeployments <- function(sheet='1Gwjaoq0l7UavwF_xuajvMMRzn_5YL-l25bpJNcUP4CY',
                                 file = 'TestDeployments.csv',
                                 dataPath='.',
                                 etopo='etopo180.nc',
