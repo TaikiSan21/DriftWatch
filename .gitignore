@@ -27,3 +27,6 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 .secrets
+DriftWatch.Rproj
+
+/DriftPlots/
