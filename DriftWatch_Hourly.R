@@ -9,7 +9,7 @@ if(length(script.dir) > 1) stop("can't determine script dir: more than one '--fi
 setwd(script.dir)
 source('DriftWatchFunctions.R')
 # Destination folder
-gdriveDest <- '~/DriftWatch/'
+gdriveDest <- as_id('1AnL8LXi9deg5gQpCICp3rnn5YfTb6iSz')
 
 cat('\n---------Script version', thisVersion(), 'run on', as.character(Sys.time()), 'with R version', R.version$version.string, '-----------')
 
@@ -26,7 +26,7 @@ db <- 'SPOTGPS_Logger.sqlite3'
 # checkDeploymentUpdates(db=db)
 # cat('\nUploading DB to gdrive...')
 with_drive_quiet({
-    drive_auth(email='taiki.sakai@noaa.gov', cache='.secrets')
+    drive_auth(email=secrets$email, cache='.secrets')
     #     drive_upload(db, path=gdriveDest, overwrite = TRUE)
 })
 cat('\nChecking for GPS CSV updates...')
@@ -93,7 +93,7 @@ if(nrow(recentDrifts) > 0) {
 }
 
 cat('\nUploading drift plots...')
-doGdriveUpload(c(combDrift, twoWeekPlot), paste0(gdriveDest, 'DriftPlots/'))
+doGdriveUpload(c(combDrift, twoWeekPlot), as_id('10LOJhEUO6mfjY0LmXwmm2iu0JH70uj6x')) # drift plots folder
 
 cat('\nMaking test deployment worksheet plots...')
 testDepPlots <- character(0)
@@ -123,7 +123,7 @@ combTestDep <- combineCurrents(testDepPlots, outDir='./TestDeploymentPlots/')
 # driftPlots <- c(driftPlots, cccPlotHYCOM, cccPlotHFRADAR)
 
 cat('\nUploading test plots to drive...')
-doGdriveUpload(combTestDep, paste0(gdriveDest, 'TestDeploymentPlots/'))
+doGdriveUpload(combTestDep, as_id('1fbufTIudlMbbUcHcrfvN0J35_mw4jE7V')) # test deployment folder
 # with_drive_quiet({
 #     allPngs <- list.files(pattern='png$', full.names = TRUE, recursive = FALSE)
 #     for(i in seq_along(allPngs)) {

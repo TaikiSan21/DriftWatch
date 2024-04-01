@@ -9,11 +9,11 @@ if(length(script.dir) > 1) stop("can't determine script dir: more than one '--fi
 setwd(script.dir)
 source('DriftWatchFunctions.R')
 # Destination folder
-gdriveDest <- '~/DriftWatch/'
+gdriveDest <- as_id('1AnL8LXi9deg5gQpCICp3rnn5YfTb6iSz')
 
 cat('\n---------Script version', thisVersion(), 'run on', as.character(Sys.time()), 'with R version', R.version$version.string, '---------------')
 with_drive_quiet({
-    drive_auth(email='taiki.sakai@noaa.gov', cache='.secrets')
+    drive_auth(email=secrets$email, cache='.secrets')
 })
 cat('\nDirectory set to', script.dir)
 db <- 'SPOTGPS_Logger.sqlite3'
