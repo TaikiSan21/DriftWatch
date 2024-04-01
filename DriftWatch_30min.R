@@ -13,7 +13,8 @@ gdriveDest <- as_id('1AnL8LXi9deg5gQpCICp3rnn5YfTb6iSz')
 
 cat('\n---------Script version', thisVersion(), 'run on', as.character(Sys.time()), 'with R version', R.version$version.string, '---------------')
 with_drive_quiet({
-    drive_auth(email=secrets$email, cache='.secrets')
+    drive_auth(email=secrets$user_email, cache='.secrets',
+               scopes="https://www.googleapis.com/auth/drive")
 })
 cat('\nDirectory set to', script.dir)
 db <- 'SPOTGPS_Logger.sqlite3'

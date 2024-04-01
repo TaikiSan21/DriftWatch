@@ -1928,9 +1928,11 @@ createOppData <- function(db, depDet) {
 # Does not replace any existing data bc if we manually change
 # would keep overriding
 # add drift names to this if we want db to differ from deployDetails sheet
+# the PASCALs currently here are problems because they have multiple rows per drift,
+# so they keep trying to update even though haven't changed
 DONTCHANGEDRIFT <- c(paste0('ADRIFT_00', 1:9),
                      paste0('ADRIFT_0', 10:11),
-                     paste0('PASCAL_', c('009', '022', '023', '026', '029'))
+                     paste0('PASCAL_', c('009', '022', '023', '024', '026', '029'))
 )
 
 updateNaVals <- function(db, table = 'deploymentData', toCheck) {

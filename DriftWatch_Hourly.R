@@ -26,7 +26,8 @@ db <- 'SPOTGPS_Logger.sqlite3'
 # checkDeploymentUpdates(db=db)
 # cat('\nUploading DB to gdrive...')
 with_drive_quiet({
-    drive_auth(email=secrets$email, cache='.secrets')
+    drive_auth(email=secrets$user_email, cache='.secrets',
+               scopes="https://www.googleapis.com/auth/drive")
     #     drive_upload(db, path=gdriveDest, overwrite = TRUE)
 })
 cat('\nChecking for GPS CSV updates...')

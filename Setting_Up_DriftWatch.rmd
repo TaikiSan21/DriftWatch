@@ -5,9 +5,13 @@ Clone the DriftWatch repository https://github.com/TaikiSan21/DriftWatch
 Download SPOTGPS_Logger.sqlite3 from the DriftWatch GoogleDrive
 https://drive.google.com/drive/u/0/folders/1AnL8LXi9deg5gQpCICp3rnn5YfTb6iSz
 
+You will also need a copy of the "secrets.yaml" file, ask Taiki (taiki.sakai@noaa.gov)
+to send it to you (cannot be made publicly available so must be transferred another way),
+this should go in the .secrets folder you create below.
+
 # Folder structure
-Create a "DriftWatch" folder and place all these files and folders within it
-In that folder create new folders "DriftPlots" and "TestDeploymentPlots"
+Within the "DriftWatch" project folder, create new folders "DriftPlots",
+"TestDeploymentPlots", and ".secrets" (note the period)
 
 # Install packages
 
@@ -16,14 +20,14 @@ listed at the top of the file
 
 # Change to use your Google account
 
-In "DriftWatch_Hourly.R", change line 29 from my email to your email.
-In "DriftWatch_30min.R" change line 16 to your email.
-You will also need to set up GoogleDrive authentication so that R
-can access our Gddrive using your credentials. You can do this with
+You will need to set up GoogleDrive authentication so that R
+can access our Gdrive using your credentials. You can do this with
 
 ```{r}
-googledrive::drive_auth(cache='.secrets')
+googledrive::drive_auth(cache='.secrets', scopes="https://www.googleapis.com/auth/drive")
 ```
+Then change the "user_email" line in the secrets.yaml file to the e-mail used above for
+authentication.
 
 # Set up task scheduler
 
@@ -36,7 +40,7 @@ a black console window pop up on your screen (it prints out no information while
 install.packages('taskscheduleR')
 library(taskscheduleR)
 taskscheduler_create(taskname = "DriftWatch_Hourly", rscript = normalizePath('DriftWatch_Hourly.R'), 
-                     schedule = "HOURLY", starttime = format(Sys.time() + 62, "%H:%M"),
+                     schedule = "HOURLY", starttime = format(Sys.time() + 620, "%H:%M"),
                      startdate = format(Sys.Date(), '%m-%d-%Y'))
 
 # for thsi one will need to manually change timing to 30 minutes, see below comment on adjusting
