@@ -40,8 +40,10 @@ thisVersion <- function() {
     '1.5'
 }
 
-getSpotAPIData <- function(id='', db, start=1) {
-    id <- secrets$spot_key
+getSpotAPIData <- function(id=secrets$spot_key, start=1) {
+    if(is.null(id)) {
+        id <- secrets$spot_key
+    }
     call <- makeSpotCall(id, where=start)
     xml <- try(read_xml(call))
     if(inherits(xml, 'try-error')) {
@@ -54,9 +56,10 @@ getSpotAPIData <- function(id='', db, start=1) {
     df
 }
 
-
-getLonestarAPIData <- function(key='', db, start=NULL, days=30) {
-    key <- secrets$lonestar_key
+getLonestarAPIData <- function(key=secrets$lonestar_key, start=NULL, days=30) {
+    if(is.null(key)) {
+        key <- secrets$lonestar_key
+    }
     if(is.null(start)) {
         start <- nowUTC() - days * 24 * 3600
     }
@@ -128,24 +131,31 @@ lsToDf <- function(x, start=TRUE) {
     result
 }
 
-getAPIData <- function(x, db, source=c('spot', 'lonestar'), progress=FALSE) {
+getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar'), progress=FALSE) {
     source <- match.arg(source)
     switch(source,
            'spot' = {
                start <- 1
-               df <- getSpotAPIData(x, db, start=start)
+               df <- getSpotAPIData(key, start=start)
                nFours <- 60
                tryMax <- 15
            },
            'lonestar' = {
                days <- 29
                start <- nowUTC() - days * 24 * 3600
-               df <- getLonestarAPIData(x, db, start=start, days=days)
+               df <- getLonestarAPIData(key, start=start, days=days)
                nFours <- 15
                tryMax <- 12
            }
     )
-    isDupe <- checkDupeCoord(df, db)
+    if(is.character(db)) {
+        con <- dbConnect(db, drv=SQLite())
+        on.exit(dbDisconnect(con))
+        dbDf <- dbReadTable(con, 'gpsData')
+    } else {
+        dbDf <- db
+    }
+    isDupe <- checkDupeCoord(df, dbDf)
     if(all(isDupe)) {
         return(NULL)
     }
@@ -171,11 +181,11 @@ getAPIData <- function(x, db, source=c('spot', 'lonestar'), progress=FALSE) {
         switch(source,
                'spot' = {
                    start <- start + 40
-                   newData <- getSpotAPIData(x, db, start=start)
+                   newData <- getSpotAPIData(key, start=start)
                },
                'lonestar' = {
                    start <- start - days * 24 * 3600
-                   newData <- getLonestarAPIData(x, db, start=start, days=days)
+                   newData <- getLonestarAPIData(key, start=start, days=days)
                }
         )
         
@@ -203,17 +213,16 @@ getAPIData <- function(x, db, source=c('spot', 'lonestar'), progress=FALSE) {
 }
 
 # x is key or id for API
-addAPIToDb <- function(x='', db, source=c('spot', 'lonestar')) {
+addAPIToDb <- function(key='', db, source=c('spot', 'lonestar')) {
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
     dbDf <- dbReadTable(con, 'gpsData')
     dbDf$UTC <- pgDateToPosix(dbDf$UTC)
     source <- match.arg(source)
-    apiData <- getAPIData(x, dbDf, source)
+    apiData <- getAPIData(key, dbDf, source)
     apiData <- mapLonestarId(apiData, db)
     if(!is.null(apiData) &&
        nrow(apiData) > 0) {
-        
         dbAppendTable(con, 'gpsData', apiData)
     }
     dbLog <- dbReadTable(con, 'gpsLogger')
@@ -435,12 +444,18 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
         thisGps <- arrange(thisGps, UTC)
         thisGps$DriftName <- x
         thisGps$DeploymentSite <- unique(thisDep$DeploymentSite)
+        ix1 <- 1:(nrow(thisGps)-1)
+        ix2 <- 2:nrow(thisGps)
         thisGps$bearing <-
-            c(bearing(matrix(c(thisGps$Longitude[1:(nrow(thisGps)-1)],
-                               thisGps$Latitude[1:(nrow(thisGps)-1)]), ncol=2),
-                      matrix(c(thisGps$Longitude[2:nrow(thisGps)],
-                               thisGps$Latitude[2:nrow(thisGps)]), ncol=2)),
+            c(bearing(matrix(c(thisGps$Longitude[ix1],
+                               thisGps$Latitude[ix1]), ncol=2),
+                      matrix(c(thisGps$Longitude[ix2],
+                               thisGps$Latitude[ix2]), ncol=2)),
               NA)
+        thisGps$distance <- c(distGeo(
+            matrix(c(thisGps$Longitude[ix1], thisGps$Latitude[ix1]), ncol=2),
+            matrix(c(thisGps$Longitude[ix2], thisGps$Latitude[ix2]), ncol=2)),
+            NA)
         thisGps$bearing <- thisGps$bearing %% 360
         thisGps
     }))
@@ -1150,7 +1165,8 @@ wcofsToList <- function(time=nowUTC(), depth=0, file='WCOFS_ROMS.rds') {
     allY <- var.get.nc(nc, 'v_northward', start=c(startX, startY, startZ, 1),
                        count = c(countX, countY, countZ, 1),
                        collapse=FALSE)
-    ncTime <- var.get.nc(nc, 'ocean_time', start=1, count=1)
+    # ncTime <- var.get.nc(nc, 'ocean_time', start=1, count=1)
+    ncTime <- var.get.nc(nc, 'time', start=1, count=1)
     ncTime <- as.POSIXct(ncTime, origin='2016-01-01 00:00:00', tz='UTC')
     result <- list(Latitude=lat[startY:(startY+countY-1)], 
                    Longitude=lon[startX:(startX+countX-1)], 
@@ -1684,8 +1700,10 @@ doDriftPlots <- function(depGps, dataPath='.', current=4, verbose=FALSE, outDir=
         if(verbose) {
             cat('\nPlotting drift', thisDep$DriftName[1])
         }
+        distEst <- round(sum(thisDep$distance, na.rm=TRUE) / 1e3, 1)
+        title <- paste0(curName, ', Est. dist. ', distEst, 'km') 
         thisPlot <- tryCatch(plotAPIDrift(thisDep, filename=fname, current=current, dataPath=dataPath, 
-                                          title=curName),
+                                          title=title),
                              error = function(e) {
                                  message(e)
                                  NULL
@@ -2322,4 +2340,40 @@ combineCurrents <- function(plots, outDir='.') {
                       createCombPlot(thisPlots, filename=file.path(outDir, basename(base)), wide=TRUE))
     }
     outfiles
+}
+
+# writes KML file for windy upload
+# gps can be DB path or output from getDbDeployment
+gpsToKml <- function(gps, drift=NULL, filename=NULL, outDir='.') {
+    if(is.character(gps)) {
+        gps <- getDbDeployment(gps, drift=drift, verbose=FALSE)
+    }
+    gps <- split(gps, gps$DriftName)
+    tracks <- vector('list', length=length(gps))
+    for(i in seq_along(gps)) {
+        thisGps <- gps[[i]]
+        thisGps <- arrange(thisGps, .data$UTC)
+        thisFile <- paste0(filename, '_', thisGps$DriftName[1], '.kml')
+        sfTrack <- st_as_sf(thisGps[c('Latitude', 'Longitude', 'DriftName')], 
+                            coords=c('Longitude', 'Latitude'), crs=4326) %>% 
+            st_combine() %>% 
+            st_cast('LINESTRING') %>% 
+            st_as_sf()
+        sfTrack$DriftName <- thisGps$DriftName[1]
+        names(sfTrack) <- c('geometry', 'DriftName')
+        st_geometry(sfTrack) <- 'geometry'
+        sfPoint <- st_as_sf(thisGps[nrow(thisGps), c('Latitude', 'Longitude', 'DriftName')],
+                            coords=c('Longitude', 'Latitude'), crs=4326)
+        sfCombined <- rbind(sfTrack, sfPoint)
+        tracks[[i]] <- sfCombined
+    }
+    tracks <- do.call(rbind, tracks)
+    if(!is.null(filename)) {
+        fileEnd <- substr(filename, nchar(filename) - 3, nchar(filename))
+        if(fileEnd != '.kml') {
+            filename <- paste0(filename , '.kml')
+        }
+        st_write(tracks, file.path(outDir, filename), append=FALSE, dataset_options=c('NameField=DriftName'))
+    }
+    tracks
 }

@@ -15,16 +15,7 @@ cat('\n---------Script version', thisVersion(), 'run on', as.character(Sys.time(
 
 cat('\nDirectory set to', script.dir)
 db <- 'SPOTGPS_Logger.sqlite3'
-# spotId <- '09m8vfKzAyrx3j1sSqVMCDamuAJKln1ys'
-# cat('\nUpdating GPS from SPOT API...')
-# updateSpot <- addAPIToDb(spotId, db=db, source='spot')
-# lonestarKey <- 'f22e32e6ba5953978f0875c86f07c5ffae24b2bc'
-# cat('\nUpdating GPS from Lonestar API...')
-# updateLs <- addAPIToDb(lonestarKey, db=db, source='lonestar')
-# # Upload to gdrive
-# cat('\nChecking for new deployments on worksheet...')
-# checkDeploymentUpdates(db=db)
-# cat('\nUploading DB to gdrive...')
+
 with_drive_quiet({
     drive_auth(email=secrets$user_email, cache='.secrets',
                scopes="https://www.googleapis.com/auth/drive")

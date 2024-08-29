@@ -20,10 +20,10 @@ cat('\nDirectory set to', script.dir)
 db <- 'SPOTGPS_Logger.sqlite3'
 
 cat('\nUpdating GPS from SPOT API...')
-updateSpot <- addAPIToDb(db=db, source='spot')
+updateSpot <- addAPIToDb(key=secrets$spot_key, db=db, source='spot')
 
 cat('\nUpdating GPS from Lonestar API...')
-updateLs <- addAPIToDb(db=db, source='lonestar')
+updateLs <- addAPIToDb(key=secrets$lonestar_key, db=db, source='lonestar')
 # Upload to gdrive
 cat('\nChecking for new deployments on worksheet...')
 updatedDrifts <- checkDeploymentUpdates(db=db)
