@@ -1165,8 +1165,14 @@ wcofsToList <- function(time=nowUTC(), depth=0, file='WCOFS_ROMS.rds') {
     allY <- var.get.nc(nc, 'v_northward', start=c(startX, startY, startZ, 1),
                        count = c(countX, countY, countZ, 1),
                        collapse=FALSE)
-    # ncTime <- var.get.nc(nc, 'ocean_time', start=1, count=1)
-    ncTime <- var.get.nc(nc, 'time', start=1, count=1)
+    # this used to be "time" but now is "ocean_time" allow checking btwn two
+    tryTime <- try(dim.inq.nc(nc, 'time'), silent=TRUE)
+    if(inherits(tryTime, 'try-error')) {
+        timeVar <- 'ocean_time'
+    } else {
+        timeVar <- 'time'
+    }
+    ncTime <- var.get.nc(nc, timeVar, start=1, count=1)
     ncTime <- as.POSIXct(ncTime, origin='2016-01-01 00:00:00', tz='UTC')
     result <- list(Latitude=lat[startY:(startY+countY-1)], 
                    Longitude=lon[startX:(startX+countX-1)], 
@@ -2344,7 +2350,7 @@ combineCurrents <- function(plots, outDir='.') {
 
 # writes KML file for windy upload
 # gps can be DB path or output from getDbDeployment
-gpsToKml <- function(gps, drift=NULL, filename=NULL, outDir='.') {
+gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL, outDir='.') {
     if(is.character(gps)) {
         gps <- getDbDeployment(gps, drift=drift, verbose=FALSE)
     }
@@ -2366,6 +2372,12 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, outDir='.') {
                             coords=c('Longitude', 'Latitude'), crs=4326)
         sfCombined <- rbind(sfTrack, sfPoint)
         tracks[[i]] <- sfCombined
+    }
+    if(!is.null(extraLocs)) {
+        names(extraLocs)[names(extraLocs) == 'name'] <- 'DriftName'
+        sfExtra <- st_as_sf(extraLocs[c('Latitude', 'Longitude', 'DriftName')],
+                            coords=c('Longitude', 'Latitude'), crs=4326)
+        tracks[[length(tracks) + 1]] <- sfExtra
     }
     tracks <- do.call(rbind, tracks)
     if(!is.null(filename)) {
