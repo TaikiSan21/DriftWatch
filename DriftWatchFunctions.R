@@ -223,6 +223,12 @@ addAPIToDb <- function(key='', db, source=c('spot', 'lonestar')) {
     apiData <- mapLonestarId(apiData, db)
     if(!is.null(apiData) &&
        nrow(apiData) > 0) {
+        overlapId <- apiData$Id %in% dbDf$Id
+        if(any(overlapId)) {
+            possId <- 1:(nrow(apiData)+nrow(dbDf))
+            possId <- possId[!possId %in% dbDf$Id]
+            apiData$Id[overlapId] <- possId[1:sum(overlapId)]
+        }
         dbAppendTable(con, 'gpsData', apiData)
     }
     dbLog <- dbReadTable(con, 'gpsLogger')
@@ -1736,19 +1742,19 @@ sheetToDbDepFormat <- function(x, new=FALSE) {
         )
     } else {
         # first 8 rows have bad formatting for dates, are MB/POSIT survey
-        x <- x[-(1:8), ]
-        selCols <- c('Deployment_Date',
+        # x <- x[-(1:8), ]
+        selCols <- c('Deployment_Date',#
                      'Data_Start',
-                     'Recovery_Date',
+                     'Recovery_Date',#
                      'Data_End',
-                     'GPS_ID',
-                     'Project',
-                     'DeploymentID',
-                     'Site',
-                     'Deployment_Latitude',
-                     'Deployment_Longitude',
-                     'Recovery_Latitude', 
-                     'Recovery_Longitude'
+                     'GPS_ID',#
+                     'Project',#
+                     'DeploymentID',#
+                     'Site',#
+                     'Deployment_Latitude',#
+                     'Deployment_Longitude',#
+                     'Recovery_Latitude', #
+                     'Recovery_Longitude'#
         )
     }
     dbNames <- c('Start', 'DataStart','End','DataEnd', 'DeviceName', 'DriftName', 'DeploymentID', 'DeploymentSite',
@@ -1837,13 +1843,26 @@ checkDeploymentUpdates <- function(sheetId = '10bxlwfVOe1LFfj69B_YddxcA0V14m7cod
         drive_download(sheetId, path='deployDetails', overwrite = TRUE)
     })
     # cat('\nReading XL sheets')
-    depDet <- read_xlsx('deployDetails.xlsx', sheet='deployDetails', col_types = 'list')
-    newDep <- read_xlsx('deployDetails.xlsx', sheet='NEW DEPLOYMENT TO SAVE', col_types ='list')
+    sheetNames <- readxl::excel_sheets('deployDetails.xlsx')
+    allDep <- vector('list', length=length(sheetNames))
+    for(i in seq_along(allDep)) {
+        if(sheetNames[i] == 'deployDetails') {
+            allDep[[i]] <- read_xlsx('deployDetails.xlsx', sheet='deployDetails', col_types = 'list')
+            allDep[[i]] <- sheetToDbDepFormat(allDep[[i]], new=FALSE)
+        }
+        if(sheetNames[i] == 'NEW DEPLOYMENT TO SAVE') {
+            allDep[[i]] <- read_xlsx('deployDetails.xlsx', sheet='NEW DEPLOYMENT TO SAVE', col_types ='list')
+            allDep[[i]] <- sheetToDbDepFormat(allDep[[i]], new=TRUE)
+        }
+    }
+    allDep <- bind_rows(allDep)
+    # depDet <- read_xlsx('deployDetails.xlsx', sheet='deployDetails', col_types = 'list')
+    # newDep <- read_xlsx('deployDetails.xlsx', sheet='NEW DEPLOYMENT TO SAVE', col_types ='list')
     
     # GPS archive if needed
-    newDep <- sheetToDbDepFormat(newDep, new=TRUE)
-    depDet <- sheetToDbDepFormat(depDet, new=FALSE)
-    allDep <- rbind(newDep, depDet)
+    # newDep <- sheetToDbDepFormat(newDep, new=TRUE)
+    # depDet <- sheetToDbDepFormat(depDet, new=FALSE)
+    # allDep <- rbind(newDep, depDet)
     oppData <- createOppData(db, allDep)
     # allDep$Start <- as.character(allDep$Start)
     # allDep$End <- as.character(allDep$End)
@@ -2350,7 +2369,8 @@ combineCurrents <- function(plots, outDir='.') {
 
 # writes KML file for windy upload
 # gps can be DB path or output from getDbDeployment
-gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL, outDir='.') {
+gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL, 
+                     contour=NULL, outDir='.') {
     if(is.character(gps)) {
         gps <- getDbDeployment(gps, drift=drift, verbose=FALSE)
     }
@@ -2380,12 +2400,59 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL, outDir='.')
         tracks[[length(tracks) + 1]] <- sfExtra
     }
     tracks <- do.call(rbind, tracks)
+    if(!is.null(contour)) {
+        contour <- readRDS(contour)
+        tracks <- rbind(tracks, contour)
+    }
     if(!is.null(filename)) {
         fileEnd <- substr(filename, nchar(filename) - 3, nchar(filename))
         if(fileEnd != '.kml') {
             filename <- paste0(filename , '.kml')
         }
         st_write(tracks, file.path(outDir, filename), append=FALSE, dataset_options=c('NameField=DriftName'))
+        if(!is.null(contour)) {
+            textKml <- read_file(file.path(outDir, filename))
+            textKml <- gsub('<name>Contour_200</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                            '<name>Contour_200</name>\n\t<Style><LineStyle><color>ffffaf7d',
+                            textKml)
+            textKml <- gsub('<name>Contour_2000</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                            '<name>Contour_2000</name>\n\t<Style><LineStyle><color>fff58742',
+                            textKml)
+            textKml <- gsub('<name>Contour_4000</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                            '<name>Contour_4000</name>\n\t<Style><LineStyle><color>ffff0000',
+                            textKml)
+            
+            write_file(textKml, file=file.path(outDir, filename))
+        }
     }
     tracks
+}
+
+plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh')) {
+    gps <- getDbDeployment(db, days=days, verbose=FALSE)
+    lastPoint <- gps %>% 
+        group_by(DriftName) %>% 
+        arrange(desc(UTC)) %>% 
+        slice(1) %>% 
+        ungroup()
+    switch(match.arg(units),
+           'knots' = {
+               ylab <- 'Knots'
+               plotCol <- 'knots'
+           },
+           'kmh' = {
+               ylab <- 'Km/Hour'
+               plotCol <- 'kmh'
+               gps$kmh <- gps$knots * 1.852
+               lastPoint$kmh <- lastPoint$knots * 1.852
+           }
+    )
+    g <- ggplot() +
+        geom_line(data=gps, aes(x=UTC, y=.data[[plotCol]], col=DriftName)) +
+        geom_label(data=lastPoint, aes(x=UTC, y=.data[[plotCol]], label=round(.data[[plotCol]], 2), col=DriftName),
+                   fontface='bold', show.legend=FALSE) +
+        geom_vline(xintercept=nowUTC()) +
+        xlim(c(min(gps$UTC), nowUTC())) +
+        ylab(ylab)
+    g
 }
