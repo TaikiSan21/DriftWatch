@@ -2468,8 +2468,8 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
                 ' last update ', 
                 format(lastPoint$UTC[i], format='%Y-%m-%d %H:%M:%S', tz=tz),
                 ' (', tz, '), ',
-                round(lastPoint$Latitude[i], 2), ', ',
-                round(lastPoint$Longitude[i], 2),'\n'
+                round(lastPoint$Latitude[i], 6), ', ',
+                round(lastPoint$Longitude[i], 6),'\n'
             )
             cat(thisMessage)
         }
