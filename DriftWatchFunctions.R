@@ -2428,8 +2428,14 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL,
     tracks
 }
 
-plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh')) {
+plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
+                             tz='UTC') {
     gps <- getDbDeployment(db, days=days, verbose=FALSE)
+    gps$UTC <- with_tz(gps$UTC, tzone=tz)
+    if(nrow(gps) == 0) {
+        warning('No GPS in the last ', days, ' days')
+        return(NULL)
+    }
     lastPoint <- gps %>% 
         group_by(DriftName) %>% 
         arrange(desc(UTC)) %>% 
@@ -2453,6 +2459,20 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh')) {
                    fontface='bold', show.legend=FALSE) +
         geom_vline(xintercept=nowUTC()) +
         xlim(c(min(gps$UTC), nowUTC())) +
-        ylab(ylab)
+        ylab(ylab) +
+        xlab(tz)
+    if(message) {
+        for(i in 1:nrow(lastPoint)) {
+            thisMessage <- paste0(
+                lastPoint$DriftName[i],
+                ' last update ', 
+                format(lastPoint$UTC[i], format='%Y-%m-%d %H:%M:%S', tz=tz),
+                ' (', tz, '), ',
+                round(lastPoint$Latitude[i], 2), ', ',
+                round(lastPoint$Longitude[i], 2),'\n'
+            )
+            cat(thisMessage)
+        }
+    }
     g
 }
