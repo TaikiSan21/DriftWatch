@@ -289,7 +289,7 @@ addAPIToDb <- function(key='', db, source=c('spot', 'lonestar', 'manualLS'), uni
        nrow(apiData) > 0) {
         overlapId <- apiData$Id %in% dbDf$Id
         if(any(overlapId)) {
-            possId <- 1:(nrow(apiData)+nrow(dbDf))
+            possId <- as.integer64(1:(nrow(apiData)+nrow(dbDf)))
             possId <- possId[!possId %in% dbDf$Id]
             apiData$Id[overlapId] <- possId[1:sum(overlapId)]
         }
