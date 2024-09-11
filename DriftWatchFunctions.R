@@ -284,9 +284,9 @@ addAPIToDb <- function(key='', db, source=c('spot', 'lonestar', 'manualLS'), uni
     }
     apiData <- getAPIData(key, dbDf, source, unit=unit, time=time)
     apiData <- mapLonestarId(apiData, db)
-    apiData$Id <- as.integer64(apiData$Id)
     if(!is.null(apiData) &&
        nrow(apiData) > 0) {
+        apiData$Id <- as.integer64(apiData$Id)
         overlapId <- apiData$Id %in% dbDf$Id
         if(any(overlapId)) {
             possId <- as.integer64(1:(nrow(apiData)+nrow(dbDf)))
