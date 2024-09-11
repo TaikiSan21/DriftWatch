@@ -107,9 +107,11 @@ getLonestarAPISingle <- function(key=secrets$lonestar_key, unit, time) {
         time <- time[1]
     }
     if(length(unit) > 1) {
-        return(bind_rows(lapply(unit, function(u) {
+        result <- bind_rows(lapply(unit, function(u) {
             getLonestarAPISingle(key=key, unit=u, time=time)
-        })))
+        }))
+        result$Id <- 1:nrow(result)
+        return(result)
     }
     if(is.null(key)) {
         key <- secrets$lonestar_key
