@@ -25,6 +25,7 @@ suppressPackageStartupMessages({
     library(grid)
     library(gridExtra)
     library(stringr)
+    library(bit64)
 })
 # Updated 1-19-22 post collapse v 1.0
 # Updated 2-7-2022 fkin etopos
@@ -283,6 +284,7 @@ addAPIToDb <- function(key='', db, source=c('spot', 'lonestar', 'manualLS'), uni
     }
     apiData <- getAPIData(key, dbDf, source, unit=unit, time=time)
     apiData <- mapLonestarId(apiData, db)
+    apiData$Id <- as.integer64(apiData$Id)
     if(!is.null(apiData) &&
        nrow(apiData) > 0) {
         overlapId <- apiData$Id %in% dbDf$Id
