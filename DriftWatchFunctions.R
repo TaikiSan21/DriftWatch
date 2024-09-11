@@ -101,6 +101,52 @@ mapLonestarId <- function(x, db) {
     }
     x
 }
+getLonestarAPISingle <- function(key=secrets$lonestar_key, unit, time) {
+    if(length(time) > 1) {
+        cat('\nCan only download one manual time per request')
+        time <- time[1]
+    }
+    if(length(unit) > 1) {
+        return(bind_rows(lapply(unit, function(u) {
+            getLonestarAPISingle(key=key, unit=u, time=time)
+        })))
+    }
+    if(is.null(key)) {
+        key <- secrets$lonestar_key
+    }
+    keyChar <- paste0('?key=', key)
+    routeURL <- 'https://fleetone.lonestartracking.com/api/v1/unit_data/history_point.json'
+    unitChar <- paste0('&unit_id=', unit)
+    timeChar <- paste0('&datetime=', PAMmisc:::fmtPsx8601(time))
+    includeChar <- '&include[]=position'
+    fromTil <- GET(paste0(routeURL, keyChar, unitChar, timeChar, includeChar))
+    if(fromTil$status_code != 200) {
+        cat('\nLonestar API access attempt was not successful')
+        return(NULL)
+    }
+    ftJSON <- fromJSON(rawToChar(fromTil$content))
+    
+    lsDf <- singleToDf(ftJSON)
+    if(is.null(lsDf) ||
+       nrow(lsDf) == 0) {
+        return(NULL)
+    }
+    lsDf
+}
+
+singleToDf <- function(x) {
+    position <- x$data$units[[1]]$position
+    result <- list(UTC=position$gmt, 
+                   Latitude=position$value$lat,
+                   Longitude=position$value$lng)
+    result$UTC <- as.POSIXct(result$UTC, format='%Y-%m-%d %H:%M:%S', tz='UTC')
+    result$DeviceId <- as.character(x$data$units[[1]]$unit_id)
+    result$Message <- NA
+    result$DeviceName <- NA
+    result$Id <- 1
+    result <- bind_rows(result)
+    result[c('Id', 'Latitude', 'Longitude', 'UTC', 'DeviceName', 'DeviceId', 'Message')]
+}
 
 # input json from ls API
 lsToDf <- function(x, start=TRUE) {
@@ -131,7 +177,7 @@ lsToDf <- function(x, start=TRUE) {
     result
 }
 
-getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar'), progress=FALSE) {
+getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar', 'manualLS'), unit=NULL, time=NULL, progress=FALSE) {
     source <- match.arg(source)
     switch(source,
            'spot' = {
@@ -146,6 +192,11 @@ getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar'), progress=FALS
                df <- getLonestarAPIData(key, start=start, days=days)
                nFours <- 15
                tryMax <- 12
+           },
+           'manualLS' = {
+               df <- getLonestarAPISingle(key, unit=unit, time=time)
+               tryMax <- 1
+               nFours <- 15
            }
     )
     if(is.character(db)) {
@@ -163,7 +214,7 @@ getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar'), progress=FALS
     # toAdd$UTC <- as.character(toAdd$UTC)
     # go again if everything was new - means more to get
     # if(start == 1) {
-    tryMax <- 10
+    # tryMax <- 10
     nTry <- 1
     while(!any(isDupe) &&
           nTry < tryMax) {
@@ -213,13 +264,22 @@ getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar'), progress=FALS
 }
 
 # x is key or id for API
-addAPIToDb <- function(key='', db, source=c('spot', 'lonestar')) {
+addAPIToDb <- function(key='', db, source=c('spot', 'lonestar', 'manualLS'), unit=NULL, time=nowUTC()) {
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
     dbDf <- dbReadTable(con, 'gpsData')
     dbDf$UTC <- pgDateToPosix(dbDf$UTC)
     source <- match.arg(source)
-    apiData <- getAPIData(key, dbDf, source)
+    # map given name back to API ID to give to manualLS mode
+    if(!is.null(unit)) {
+        map <- dbReadTable(con, 'lonestarMap')
+        
+        for(i in seq_along(unit)) {
+            if(!unit[i] %in% map$DeviceName) next
+            unit[i] <- map$API_Id[map$DeviceName == unit[i]]
+        }
+    }
+    apiData <- getAPIData(key, dbDf, source, unit=unit, time=time)
     apiData <- mapLonestarId(apiData, db)
     if(!is.null(apiData) &&
        nrow(apiData) > 0) {
@@ -236,7 +296,8 @@ addAPIToDb <- function(key='', db, source=c('spot', 'lonestar')) {
     now <- nowUTC()
     sourceName <- switch(source,
                          'spot' = 'SPOT API',
-                         'lonestar' = 'Lonestar API'
+                         'lonestar' = 'Lonestar API',
+                         'manualLS' = 'Lonestar Manual API'
     )
     logAppend <- data.frame(Id = logId, UTC = format(now, format='%Y-%m-%d %H:%M:%S'),
                             RowsAdded = ifelse(is.null(apiData), 0, nrow(apiData)),
@@ -405,7 +466,7 @@ allZero <- function(x) {
         second(x) == 0
 }
 
-getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
+getDbDeployment <- function(db, drift=NULL, days=NULL, knotsLimit=4, verbose=TRUE) {
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
     gps <- dbReadTable(con, 'gpsData')
@@ -446,10 +507,11 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
             thisGps$recordingEffort <- thisGps$UTC >= thisDep$DataStart &
                 thisGps$UTC <= thisDep$DataEnd
         }
-        thisGps <- dropBySpeed(thisGps, knots=4)
+        thisGps <- dropBySpeed(thisGps, knots=knotsLimit)
         thisGps <- arrange(thisGps, UTC)
         thisGps$DriftName <- x
         thisGps$DeploymentSite <- unique(thisDep$DeploymentSite)
+        if(nrow(thisGps) > 1) {
         ix1 <- 1:(nrow(thisGps)-1)
         ix2 <- 2:nrow(thisGps)
         thisGps$bearing <-
@@ -463,6 +525,10 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, verbose=TRUE) {
             matrix(c(thisGps$Longitude[ix2], thisGps$Latitude[ix2]), ncol=2)),
             NA)
         thisGps$bearing <- thisGps$bearing %% 360
+        } else {
+            thisGps$bearing <- NA
+            thisGps$distance <- NA
+        }
         thisGps
     }))
     if(is.null(days)) {
@@ -2370,9 +2436,9 @@ combineCurrents <- function(plots, outDir='.') {
 # writes KML file for windy upload
 # gps can be DB path or output from getDbDeployment
 gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL, 
-                     contour=NULL, outDir='.') {
+                     contour=NULL, outDir='.', knotsLimit=4) {
     if(is.character(gps)) {
-        gps <- getDbDeployment(gps, drift=drift, verbose=FALSE)
+        gps <- getDbDeployment(gps, drift=drift, verbose=FALSE, knotsLimit=knotsLimit)
     }
     gps <- split(gps, gps$DriftName)
     tracks <- vector('list', length=length(gps))
@@ -2429,8 +2495,8 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL,
 }
 
 plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
-                             tz='UTC') {
-    gps <- getDbDeployment(db, days=days, verbose=FALSE)
+                             tz='UTC', knotsLimit=4) {
+    gps <- getDbDeployment(db, days=days, verbose=FALSE, knotsLimit=knotsLimit)
     gps$UTC <- with_tz(gps$UTC, tzone=tz)
     if(nrow(gps) == 0) {
         warning('No GPS in the last ', days, ' days')
