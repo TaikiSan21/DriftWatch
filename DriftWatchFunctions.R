@@ -1287,6 +1287,8 @@ buildWcUrl <- function(y, m, d, h) {
     dset <- 'nos.wcofs.regulargrid.f'
     dsetTime <- paste0(h, '.', y, m, d, '.t03z.nc')
     paste0(base, ymd, dset, dsetTime)
+    paste0(base, ymd, 'wcofs.t03z.', y, m, d, '.regulargrid.f', h, '.nc')
+    # 'wcofs.t03z.20240911.regulargrid.f024.nc' # new format
 }
 
 makeRangeDf <- function() {
