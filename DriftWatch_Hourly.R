@@ -79,7 +79,11 @@ noPlot <- c('ADRIFT_004', 'ADRIFT_008')
 recentDrifts <- getDbDeployment(db, days=14, verbose=FALSE)
 recentDrifts <- recentDrifts[!(recentDrifts$DriftName %in% noPlot), ]
 if(nrow(recentDrifts) > 0) {
-    twoWeekPlot <- plotAPIDrift(recentDrifts, filename='./DriftPlots/Last14Days.png', current=FALSE, dataPath = 'PlottingData')
+    twoWeekPlot <- plotAPIDrift(recentDrifts, 
+                                filename='./DriftPlots/Last14Days.png', 
+                                xlim=2,
+                                current=FALSE, 
+                                dataPath = 'PlottingData')
 } else {
     twoWeekPlot <- NULL
 }
