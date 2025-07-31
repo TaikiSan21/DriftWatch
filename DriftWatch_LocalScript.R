@@ -38,7 +38,7 @@ kmlShapefile <- gpsToKml(db,
 kmlShapefile <- gpsToKml(db, 
                          filename='AllKML', 
                          extraLocs=nrsLocs,
-                         contour='NEFSC_DepthContours.rds')
+                         contour='NEFSC_NewGEOJSON.rds')
 
 # plot speed of recent buoys - this will show all buoys of last 7 days
 # can shrink window if too much irrelevant info

@@ -2493,6 +2493,12 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL,
             textKml <- gsub('<name>Contour_4000</name>\n\t<Style><LineStyle><color>ff0000ff', 
                             '<name>Contour_4000</name>\n\t<Style><LineStyle><color>ffff0000',
                             textKml)
+            textKml <- gsub('<name>TargetGridcells</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                            '<name>TargetGridcells</name>\n\t<Style><LineStyle><color>fff58742',
+                            textKml)
+            textKml <- gsub('<name>14nmiFrom200m</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                            '<name>14nmiFrom200m</name>\n\t<Style><LineStyle><color>ffff0000',
+                            textKml)
             
             write_file(textKml, file=file.path(outDir, filename))
         }
