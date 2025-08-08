@@ -1849,7 +1849,12 @@ sheetToDbDepFormat <- function(x, new=FALSE) {
     }
     x$DeploymentID <- ifelse(is.na(x$DeploymentID), '', x$DeploymentID)
     for(i in 1:nrow(x)) {
-        x$DeploymentID[i] <- paste0(paste0(rep(0, 3-nchar(x$DeploymentID[i])), collapse=''), x$DeploymentID[i])
+        if(nchar(x$DeploymentID[i]) < 3) {
+            charId <- paste0(paste0(rep(0, 3-nchar(x$DeploymentID[i])), collapse=''), x$DeploymentID[i])
+        } else {
+            charId <- as.character(x$DeploymentID[i])
+        }
+        x$DeploymentID[i] <- charId
         #### Uncomment these to update to DataStart/End ####
         # if(!is.na(x$DataStart[i])) {
         #     x$Start[i] <- x$DataStart[i]
@@ -2507,7 +2512,8 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL,
 }
 
 plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
-                             tz='UTC', gpsFormat=c('deciminute', 'decidegree', 'dms'), knotsLimit=4) {
+                             tz='UTC', gpsFormat=c('deciminute', 'decidegree', 'dms'), 
+                             knotsLimit=4, filename=NULL) {
     gps <- getDbDeployment(db, days=days, verbose=FALSE, knotsLimit=knotsLimit)
     gps$UTC <- with_tz(gps$UTC, tzone=tz)
     if(nrow(gps) == 0) {
@@ -2515,7 +2521,7 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
         return(NULL)
     }
     lastPoint <- gps %>% 
-        group_by(DriftName) %>% 
+        group_by(DriftName, DeploymentSite) %>% 
         arrange(desc(UTC)) %>% 
         slice(1) %>% 
         ungroup()
@@ -2539,18 +2545,29 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
         xlim(c(min(gps$UTC), nowUTC())) +
         ylab(ylab) +
         xlab(tz)
+    lastPoint$Latitude <- sapply(lastPoint$Latitude, fmtCoord, mode=gpsFormat)
+    lastPoint$Longitude <- sapply(lastPoint$Longitude, fmtCoord, mode=gpsFormat)
     if(message) {
         for(i in 1:nrow(lastPoint)) {
             thisMessage <- paste0(
                 lastPoint$DriftName[i],
+                '(', lastPoint$DeploymentSite[i], ')',
                 ' last update ', 
                 format(lastPoint$UTC[i], format='%Y-%m-%d %H:%M:%S', tz=tz),
                 ' (', tz, '), ',
-                fmtCoord(lastPoint$Latitude[i], mode=gpsFormat), ', ',
-                fmtCoord(lastPoint$Longitude[i], mode=gpsFormat),'\n'
+                lastPoint$Latitude[i], ', ',
+                lastPoint$Longitude[i],'\n'
             )
             cat(thisMessage)
         }
+    }
+    if(!is.null(filename)) {
+        outPng <- paste0(filename, '.png')
+        outCsv <- paste0(filename, '.csv')
+        ggsave(g, filename=outPng, width=1400, height=900, units='px', dpi=180)
+        write.csv(lastPoint, file=outCsv, row.names=FALSE)
+        print(g)
+        return(c(outPng, outCsv))
     }
     g
 }

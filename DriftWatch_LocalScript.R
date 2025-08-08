@@ -13,7 +13,7 @@ db <- file.path(dwFolder, 'DWGPS.sqlite3')
 # updateSpot <- addAPIToDb(key=secrets$spot_key, db=db, source='spot')
 
 cat('\nUpdating GPS from Lonestar API...')
-updateLs <- addAPIToDb(key=secrets$lonestar_swfsc, db=db, source='lonestar')
+# updateLs <- addAPIToDb(key=secrets$lonestar_swfsc, db=db, source='lonestar')
 updateLs <- addAPIToDb(key=secrets$lonestar_nefsc, db=db, source='lonestar')
 
 # googledrive::drive_auth(cache='.secrets', scopes="https://www.googleapis.com/auth/drive")
@@ -43,4 +43,10 @@ kmlShapefile <- gpsToKml(db,
 # plot speed of recent buoys - this will show all buoys of last 7 days
 # can shrink window if too much irrelevant info
 # gpsFormat can be "deciminute", "dms", or "decidegree"
-plotSpeedSummary(db, days=7, units='kmh', gpsFormat='deciminute')
+# This will create a CSV and PNG file with name "filename"
+summaryFiles <- plotSpeedSummary(db, days=7, units='kmh', gpsFormat='deciminute',
+                                 filename=file.path(dwFolder, 'SpeedSummary'))
+
+# This destionation ID is the part of the GDrive URL after folders/ when you click
+# on the folder you want to output to
+doGdriveUpload(summaryFiles, destination = as_id('1KEl82vascis6mqUcLHBv2-_MhFuodud2'))
