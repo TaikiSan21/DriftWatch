@@ -42,4 +42,5 @@ kmlShapefile <- gpsToKml(db,
 
 # plot speed of recent buoys - this will show all buoys of last 7 days
 # can shrink window if too much irrelevant info
-plotSpeedSummary(db, days=7, units='kmh')
+# gpsFormat can be "deciminute", "dms", or "decidegree"
+plotSpeedSummary(db, days=7, units='kmh', gpsFormat='deciminute')

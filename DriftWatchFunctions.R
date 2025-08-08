@@ -2507,7 +2507,7 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL,
 }
 
 plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
-                             tz='UTC', knotsLimit=4) {
+                             tz='UTC', gpsFormat=c('deciminute', 'decidegree', 'dms'), knotsLimit=4) {
     gps <- getDbDeployment(db, days=days, verbose=FALSE, knotsLimit=knotsLimit)
     gps$UTC <- with_tz(gps$UTC, tzone=tz)
     if(nrow(gps) == 0) {
@@ -2546,8 +2546,8 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
                 ' last update ', 
                 format(lastPoint$UTC[i], format='%Y-%m-%d %H:%M:%S', tz=tz),
                 ' (', tz, '), ',
-                round(lastPoint$Latitude[i], 6), ', ',
-                round(lastPoint$Longitude[i], 6),'\n'
+                fmtCoord(lastPoint$Latitude[i], mode=gpsFormat), ', ',
+                fmtCoord(lastPoint$Longitude[i], mode=gpsFormat),'\n'
             )
             cat(thisMessage)
         }
