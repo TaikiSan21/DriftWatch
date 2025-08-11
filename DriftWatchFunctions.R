@@ -2221,7 +2221,8 @@ fmtCoord <- function(x, mode=c('decidegree', 'dms', 'deciminute')) {
                if(m < 10) m <- paste0('0', m)
                if(s < 10) s <- paste0('0', s)
                if(isNeg) d <- d * -1
-               paste0(d, '\u00B0', m, "'", s, '"')
+               # paste0(d, '\u00B0', m, "'", s, '"')
+               paste0(d, ' ', m, "'", s, '"')
            },
            'deciminute' = {
                isNeg <- x < 0
@@ -2233,7 +2234,8 @@ fmtCoord <- function(x, mode=c('decidegree', 'dms', 'deciminute')) {
                m <- m %% 60
                if(m < 10) m <- paste0('0', m)
                if(isNeg) d <- d * -1
-               paste0(d, '\u00B0', m, "'")
+               # paste0(d, '\u00B0', m, "'")
+               paste0(d, ' ', m, "'")
            }
     )
 }
