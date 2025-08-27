@@ -2537,6 +2537,7 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
                plotCol <- 'kmh'
                gps$kmh <- gps$knots * 1.852
                lastPoint$kmh <- lastPoint$knots * 1.852
+               knotsLimit <- knotsLimit * 1.852
            }
     )
     g <- ggplot() +
@@ -2546,7 +2547,8 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
         geom_vline(xintercept=nowUTC()) +
         xlim(c(min(gps$UTC), nowUTC())) +
         ylab(ylab) +
-        xlab(tz)
+        xlab(tz) + 
+        ylim(0, knotsLimit)
     lastPoint$Latitude <- sapply(lastPoint$Latitude, fmtCoord, mode=gpsFormat)
     lastPoint$Longitude <- sapply(lastPoint$Longitude, fmtCoord, mode=gpsFormat)
     if(message) {
