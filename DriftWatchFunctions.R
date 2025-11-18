@@ -516,19 +516,18 @@ getDbDeployment <- function(db, drift=NULL, days=NULL, knotsLimit=4, verbose=TRU
         thisGps$DriftName <- x
         thisGps$DeploymentSite <- unique(thisDep$DeploymentSite)
         if(nrow(thisGps) > 1) {
-        ix1 <- 1:(nrow(thisGps)-1)
-        ix2 <- 2:nrow(thisGps)
-        thisGps$bearing <-
-            c(bearing(matrix(c(thisGps$Longitude[ix1],
-                               thisGps$Latitude[ix1]), ncol=2),
-                      matrix(c(thisGps$Longitude[ix2],
-                               thisGps$Latitude[ix2]), ncol=2)),
-              NA)
-        thisGps$distance <- c(distGeo(
-            matrix(c(thisGps$Longitude[ix1], thisGps$Latitude[ix1]), ncol=2),
-            matrix(c(thisGps$Longitude[ix2], thisGps$Latitude[ix2]), ncol=2)),
-            NA)
-        thisGps$bearing <- thisGps$bearing %% 360
+            ix1 <- 1:(nrow(thisGps)-1)
+            ix2 <- 2:nrow(thisGps)
+            thisGps$bearing <-
+                c(NA, bearing(matrix(c(thisGps$Longitude[ix1],
+                                       thisGps$Latitude[ix1]), ncol=2),
+                              matrix(c(thisGps$Longitude[ix2],
+                                       thisGps$Latitude[ix2]), ncol=2)))
+            thisGps$distance <- c(NA,
+                                  distGeo(
+                                      matrix(c(thisGps$Longitude[ix1], thisGps$Latitude[ix1]), ncol=2),
+                                      matrix(c(thisGps$Longitude[ix2], thisGps$Latitude[ix2]), ncol=2)))
+            thisGps$bearing <- thisGps$bearing %% 360
         } else {
             thisGps$bearing <- NA
             thisGps$distance <- NA
