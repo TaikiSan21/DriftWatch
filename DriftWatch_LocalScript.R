@@ -12,9 +12,12 @@ db <- file.path(dwFolder, 'DWGPS.sqlite3')
 # cat('\nUpdating GPS from SPOT API...')
 # updateSpot <- addAPIToDb(key=secrets$spot_key, db=db, source='spot')
 
-cat('\nUpdating GPS from Lonestar API...')
+# cat('\nUpdating GPS from Lonestar API...')
 # updateLs <- addAPIToDb(key=secrets$lonestar_swfsc, db=db, source='lonestar')
-updateLs <- addAPIToDb(key=secrets$lonestar_nefsc, db=db, source='lonestar')
+# updateLs <- addAPIToDb(key=secrets$lonestar_nefsc, db=db, source='lonestar')
+
+cat('\nUpdating GPS from Lockon API (~2 minutes)...')
+updateLockon <- addAPIToDb(key=secrets$lockon_key, db=db, source='lockon')
 
 # googledrive::drive_auth(cache='.secrets', scopes="https://www.googleapis.com/auth/drive")
 cat('\nChecking for new deployments on worksheet...')

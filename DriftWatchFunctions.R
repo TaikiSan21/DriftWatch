@@ -34,11 +34,12 @@ suppressPackageStartupMessages({
 # Updated 6-14-2022 DB now has Lonestar names instead of dumb ID
 # Updated 9-22-2022 To do GPS CSV. Also moved GPS downloads to 30 minutes w/texting
 # Updated 10-10-2023 Forgot these, but currently combining diff currents into 1 plot
+# Updated 03-19-2026 Adding LockOn GPS support
 
 # this stores api keys and PWs for things - not to be shared
 secrets <- read_yaml('.secrets/secrets.yaml')
 thisVersion <- function() {
-    '1.5'
+    '1.6'
 }
 
 getSpotAPIData <- function(id=secrets$spot_key, start=1) {
@@ -180,7 +181,108 @@ lsToDf <- function(x, start=TRUE) {
     result
 }
 
-getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar', 'manualLS'), unit=NULL, time=NULL, progress=FALSE) {
+getLockonAPIData <- function(key=secrets$lockon_key, start=NULL, days=30, devices=NULL) {
+    sleeptime <- 10
+    if(is.null(key)) {
+        key <- secrets$lockon_key
+    }
+    if(is.null(start)) {
+        start <- nowUTC() - days * 24 * 3600
+    }
+    if(is.null(devices)) {
+        devices <- getLockonDevices(key)
+        Sys.sleep(sleeptime)
+    }
+    base <- 'https://gps.lockongps.com/api'
+    if(days > 30) {
+        days <- 30
+    }
+    end <- start + days * 24 * 3600
+    fromChar <- strsplit(PAMmisc:::fmtPsx8601(start), 'T')[[1]]
+    tillChar <- strsplit(PAMmisc:::fmtPsx8601(end), 'T')[[1]]
+    fromDate <- fromChar[1]
+    fromTime <- gsub('Z', '', fromChar[2])
+    tillDate <- tillChar[1]
+    tillTime <- gsub('Z', '', tillChar[2])
+    url <- paste0(base,
+                  '/get_history',
+                  '?lang=en',
+                  '&from_date=', fromDate,
+                  '&from_time=', fromTime,
+                  '&to_date=', tillDate,
+                  '&to_time=', tillTime,
+                  '&user_api_hash=', key
+    )
+    result <- vector('list', length=nrow(devices))
+    # result <- vector('list', length=1)
+    for(i in seq_along(result)) {
+        devUrl <- paste0(url, '&device_id=', devices$id[i])
+        histget <- GET(devUrl)
+        if(histget$status_code != 200) {
+            cat('\nLockon API access attempt for device', devices$DeviceName[i], 'was not successful')
+            return(histget)
+        }
+        data <- formatLockonHistory(histget)
+        data$DeviceName <- devices$DeviceName[i]
+        result[[i]] <- data
+        if(i == length(result)) {
+            # avoid last sleep
+            break
+        }
+        Sys.sleep(sleeptime)
+    }
+    result <- bind_rows(result)
+    result <- distinct(result[c('Id', 'Latitude', 'Longitude', 'UTC', 'DeviceName', 'DeviceId', 'Message')])
+    result
+}
+
+formatLockonHistory <- function(data) {
+    data <- fromJSON(rawToChar(data$content))
+    cols <- c('id', 'device_id', 'time', 'raw_time', 'latitude', 'longitude', 'distance', 'device_time', 'server_time', 'valid')
+    data <-  bind_rows(lapply(data$items, function(x) {
+        result <- bind_rows(lapply(x$items, function(y) {
+            if(!all(cols %in% names(y))) {
+                warning('Unexpected format in part of LockOn download')
+                return(NULL)
+            }
+            y[cols]
+        }))
+        result$status <- x$status
+        result
+    })
+    )
+    # print(names(data))
+    data <- rename(data,
+                   Id = id,
+                   Latitude = latitude,
+                   Longitude = longitude,
+                   UTC = device_time,
+                   DeviceId = device_id)
+    data$UTC <- as.POSIXct(data$UTC, format='%Y-%m-%d %H:%M:%S', tz='UTC')
+    data$Message <- NA
+    data
+}
+
+getLockonDevices <- function(key=secrets$lockon_key) {
+    url <- paste0('https://gps.lockongps.com/api',
+                  '/get_devices',
+                  '?lang=en',
+                  '&user_api_hash=',
+                  key)
+    dev  <- httr::GET(url)
+    dev_data <- rjson::fromJSON(rawToChar(dev$content))
+    devdf <- bind_rows(lapply(dev_data[[1]]$items, function(x) {
+        time <- x$device_data$time
+        result <- x[c('id', 'name')] #, 'time')]
+        result$time <- time
+        result$name <- gsub(' ', '', result$name)
+        result$DeviceName <- gsub('.*([0-9]{3}$)', 'SO-\\1', result$name)
+        result
+    }))
+    devdf
+}
+
+getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar', 'manualLS', 'lockon'), unit=NULL, time=NULL, progress=FALSE) {
     source <- match.arg(source)
     switch(source,
            'spot' = {
@@ -198,6 +300,14 @@ getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar', 'manualLS'), u
            },
            'manualLS' = {
                df <- getLonestarAPISingle(key, unit=unit, time=time)
+               tryMax <- 1
+               nFours <- 15
+           },
+           'lockon' = {
+               devices <- getLockonDevices(key)
+               days <- 30
+               start <- nowUTC() - days * 24 * 3600
+               df <- getLockonAPIData(key, start=start, days=days, devices=devices)
                tryMax <- 1
                nFours <- 15
            }
@@ -240,19 +350,22 @@ getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar', 'manualLS'), u
                'lonestar' = {
                    start <- start - days * 24 * 3600
                    newData <- getLonestarAPIData(key, start=start, days=days)
+               },
+               'lockon' = {
+                   start <- start - days * 24 * 3600
+                   newData <- getLockonAPIData(key, start=start, days=days, devices=devices)
                }
         )
-        
+        newData <- newData[!is.na(newData$Id), ]
         if(is.null(newData) ||
            nrow(newData) == 0) {
             break
         }
-        isDupe <- checkDupeCoord(newData, db)
+        isDupe <- checkDupeCoord(newData, dbDf)
         if(all(isDupe)) {
             break
         }
         newData <- newData[!isDupe, ]
-        # newData$UTC <- as.character(newData$UTC)
         toAdd <- distinct(bind_rows(toAdd, newData))
         if(any(isDupe)) {
             break
@@ -267,7 +380,7 @@ getAPIData <- function(key=NULL, db, source=c('spot', 'lonestar', 'manualLS'), u
 }
 
 # x is key or id for API
-addAPIToDb <- function(key='', db, source=c('spot', 'lonestar', 'manualLS'), unit=NULL, time=nowUTC()) {
+addAPIToDb <- function(key='', db, source=c('spot', 'lonestar', 'manualLS', 'lockon'), unit=NULL, time=nowUTC()) {
     con <- dbConnect(db, drv=SQLite())
     on.exit(dbDisconnect(con))
     dbDf <- dbReadTable(con, 'gpsData')
@@ -284,30 +397,50 @@ addAPIToDb <- function(key='', db, source=c('spot', 'lonestar', 'manualLS'), uni
     }
     apiData <- getAPIData(key, dbDf, source, unit=unit, time=time)
     apiData <- mapLonestarId(apiData, db)
-    if(!is.null(apiData) &&
-       nrow(apiData) > 0) {
-        apiData$Id <- as.integer64(apiData$Id)
-        overlapId <- apiData$Id %in% dbDf$Id
-        if(any(overlapId)) {
-            possId <- as.integer64(1:(nrow(apiData)+nrow(dbDf)))
-            possId <- possId[!possId %in% dbDf$Id]
-            apiData$Id[overlapId] <- possId[1:sum(overlapId)]
-        }
-        dbAppendTable(con, 'gpsData', apiData)
-    }
-    dbLog <- dbReadTable(con, 'gpsLogger')
-    logId <- ifelse(nrow(dbLog) == 0, 1, max(dbLog$Id) + 1)
-    now <- nowUTC()
     sourceName <- switch(source,
                          'spot' = 'SPOT API',
                          'lonestar' = 'Lonestar API',
-                         'manualLS' = 'Lonestar Manual API'
+                         'manualLS' = 'Lonestar Manual API',
+                         'lockon' = 'LockOn API'
     )
-    logAppend <- data.frame(Id = logId, UTC = format(now, format='%Y-%m-%d %H:%M:%S'),
-                            RowsAdded = ifelse(is.null(apiData), 0, nrow(apiData)),
-                            Source = sourceName)
-    dbAppendTable(con, 'gpsLogger', logAppend)
+    addGpsToDb(con, apiData, logMessage = sourceName)
     apiData
+}
+
+addGpsToDb <- function(db, gps, logMessage=NA) {
+    if(inherits(db, 'SQLiteConnection')) {
+        con <- db
+    } else {
+        con <- dbConnect(db, drv=SQLite())
+        on.exit(dbDisconnect(con))
+    }
+    if(is.null(gps) || nrow(gps) == 0) {
+        now <- nowUTC()
+        logAppend <- data.frame(Id = NA, UTC = format(now, format='%Y-%m-%d %H:%M:%S'),
+                                RowsAdded = 0,
+                                Source = logMessage)
+        dbAppendTable(con, 'gpsLogger', logAppend)
+        return(NULL)
+    }
+    reqCols <- c('UTC', 'Latitude', 'Longitude', 'DeviceName')
+    if(any(!reqCols %in% names(gps))) {
+        warning('Missing required column(s) ', paste0(reqCols[!reqCols %in% names(gps)], collapse=','),
+                ' cannot add GPS')
+    }
+    otherCols <- c('DeviceId', 'Message')
+    for(c in otherCols) {
+        if(!c %in% names(gps)) {
+            gps[[c]] <- NA
+        }
+    }
+    gps$Id <- NA
+    dbAppendTable(con, 'gpsData', gps)
+    now <- nowUTC()
+    logAppend <- data.frame(Id = NA, UTC = format(now, format='%Y-%m-%d %H:%M:%S'),
+                            RowsAdded = nrow(gps),
+                            Source = logMessage)
+    dbAppendTable(con, 'gpsLogger', logAppend)
+    gps
 }
 
 psxToSpot <- function(x) {
@@ -2573,4 +2706,52 @@ plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
         return(c(outPng, outCsv))
     }
     g
+}
+
+fixGpsIndex <- function(db) {
+    if(inherits(db, 'SQLiteConnection')) {
+        con <- db
+    } else {
+        con <- dbConnect(db, drv=SQLite())
+        on.exist(dbDisconnect(con))
+    }
+    info <- dbGetQuery(con, 'pragma table_info("gpsData");')
+    idType <- info$type[info$name == 'Id']
+    if(idType == 'INTEGER') {
+        return(NULL)
+    }
+    qs <- c('
+create table gps_temp 
+  (Id INTEGER PRIMARY KEY,
+  Latitude DOUBLE,
+  Longitude DOUBLE,
+  UTC DATETIME,
+  DeviceName CHAR,
+  DeviceId CHAR,
+  Message CHAR
+  );',
+            'insert into gps_temp (Latitude, Longitude, UTC, DeviceName, DeviceId, Message)
+select Latitude, Longitude, UTC, DeviceName, DeviceId, Message from gpsData;',
+            'drop table gpsData;',
+            'create table gpsData
+  (Id INTEGER PRIMARY KEY,
+  Latitude DOUBLE,
+  Longitude DOUBLE,
+  UTC DATETIME,
+  DeviceName CHAR,
+  DeviceId CHAR,
+  Message CHAR
+  );',
+            
+            'insert into gpsData (Id, Latitude, Longitude, UTC, DeviceName, DeviceId, Message)
+select Id, Latitude, Longitude, UTC, DeviceName, DeviceId, Message from gps_temp;',
+            'drop table gps_temp;
+')
+    for(q in qs) {
+        qsend <- dbSendStatement(con, q)
+        dbHasCompleted(qsend)
+        dbGetRowsAffected(qsend)
+        dbClearResult(qsend)
+    }
+    TRUE
 }
