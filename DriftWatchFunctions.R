@@ -1,7 +1,6 @@
 suppressPackageStartupMessages({
     library(dplyr)
     library(RSQLite)
-    # library(plotKML)
     library(xml2)
     library(marmap)
     library(sf)
@@ -26,6 +25,7 @@ suppressPackageStartupMessages({
     library(gridExtra)
     library(stringr)
     library(bit64)
+    library(geojsonsf)
 })
 # Updated 1-19-22 post collapse v 1.0
 # Updated 2-7-2022 fkin etopos
@@ -181,7 +181,7 @@ lsToDf <- function(x, start=TRUE) {
     result
 }
 
-getLockonAPIData <- function(key=secrets$lockon_key, start=NULL, days=30, devices=NULL) {
+getLockonAPIData <- function(key=secrets$lockon_key, start=NULL, days=30, devices=NULL, progress=TRUE) {
     sleeptime <- 10
     if(is.null(key)) {
         key <- secrets$lockon_key
@@ -215,12 +215,20 @@ getLockonAPIData <- function(key=secrets$lockon_key, start=NULL, days=30, device
     )
     result <- vector('list', length=nrow(devices))
     # result <- vector('list', length=1)
+    if(isTRUE(progress)) {
+        cat('\nDownloading LockOn data for', length(result), 'devices...\n')
+        pb <- txtProgressBar(min=0, max=length(result), style = 3)
+    }
     for(i in seq_along(result)) {
         devUrl <- paste0(url, '&device_id=', devices$id[i])
         histget <- GET(devUrl)
+        if(isTRUE(progress)) {
+            setTxtProgressBar(pb, value=i)
+        }
         if(histget$status_code != 200) {
             cat('\nLockon API access attempt for device', devices$DeviceName[i], 'was not successful')
-            return(histget)
+            # return(histget)
+            next
         }
         data <- formatLockonHistory(histget)
         data$DeviceName <- devices$DeviceName[i]
@@ -2754,4 +2762,38 @@ select Id, Latitude, Longitude, UTC, DeviceName, DeviceId, Message from gps_temp
         dbClearResult(qsend)
     }
     TRUE
+}
+
+# files can be KML, geojson, or RDS
+# order is back to front - background shape should be first,
+# top-most layer shape should be last
+# names is a required field to give each a separate name
+# Only specific names will get non-red colors:
+## 14nmiFrom200m - dark blue
+## TargetGridcells - light blue
+# other names will just end up red - ask Taiki to add more
+kmlCombiner <- function(files, names, outfile=NULL) {
+    # dotsList <- list(...)
+    if(length(names) != length(files)) {
+        stop('"names" must be same length as "files"')
+    }
+    result <- vector('list', length=length(files))
+    for(i in seq_along(files)) {
+        if(grepl('geojson$', files[i], ignore.case=TRUE)) {
+            data <- geojson_sf(files[i])
+        }
+        if(grepl('kml$', files[i], ignore.case=TRUE)) {
+            data <- st_read(files[i])
+        }
+        if(grepl('rds$', files[i], ignore.case=TRUE)) {
+            data <- readRDS(files[i])
+        }
+        data$DriftName <- names[i]
+        result[[i]] <- data[c('geometry', 'DriftName')]
+    }
+    result <- do.call(rbind, result)
+    if(!is.null(outfile)) {
+        saveRDS(result, file=outfile)
+    }
+    result
 }
