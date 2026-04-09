@@ -2783,7 +2783,7 @@ kmlCombiner <- function(files, names, outfile=NULL) {
             data <- geojson_sf(files[i])
         }
         if(grepl('kml$', files[i], ignore.case=TRUE)) {
-            data <- st_read(files[i])
+            data <- st_read(files[i], quiet=TRUE)
         }
         if(grepl('rds$', files[i], ignore.case=TRUE)) {
             data <- readRDS(files[i])
@@ -2795,5 +2795,5 @@ kmlCombiner <- function(files, names, outfile=NULL) {
     if(!is.null(outfile)) {
         saveRDS(result, file=outfile)
     }
-    result
+    invisible(result)
 }
