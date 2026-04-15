@@ -11,7 +11,7 @@ db <- file.path(dwFolder, 'DWGPS.sqlite3')
 # we shouldn't need to download the SPOT GPS - only used by SWFSC
 # cat('\nUpdating GPS from SPOT API...')
 # updateSpot <- addAPIToDb(key=secrets$spot_key, db=db, source='spot')
-# Example pull error - GitHub file
+
 # cat('\nUpdating GPS from Lonestar API...')
 # updateLs <- addAPIToDb(key=secrets$lonestar_swfsc, db=db, source='lonestar')
 # updateLs <- addAPIToDb(key=secrets$lonestar_nefsc, db=db, source='lonestar')
