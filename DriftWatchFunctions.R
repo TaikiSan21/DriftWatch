@@ -259,6 +259,9 @@ formatLockonHistory <- function(data) {
         result
     })
     )
+    if(is.null(data) || nrow(data) == 0) {
+        return(NULL)
+    }
     # print(names(data))
     data <- rename(data,
                    Id = id,
