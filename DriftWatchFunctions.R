@@ -2724,7 +2724,7 @@ fixGpsIndex <- function(db) {
         con <- db
     } else {
         con <- dbConnect(db, drv=SQLite())
-        on.exist(dbDisconnect(con))
+        on.exit(dbDisconnect(con))
     }
     info <- dbGetQuery(con, 'pragma table_info("gpsData");')
     idType <- info$type[info$name == 'Id']
