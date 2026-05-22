@@ -2656,6 +2656,40 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL,
     tracks
 }
 
+gpsToMarineKML <- function(gps, drift=NULL, filename=NULL, outDir='.', knotsLimit=4) {
+    if(is.character(gps)) {
+        gps <- getDbDeployment(gps, drift=drift, verbose=FALSE, knotsLimit=knotsLimit)
+    }
+    gps <- split(gps, gps$DriftName)
+    gps <- bind_rows(lapply(gps, function(x) {
+        x <- arrange(x, .data$UTC)
+        x[nrow(x), c('Latitude', 'Longitude', 'DriftName')]
+    }))
+    gps <- st_as_sf(gps, coords=c('Longitude', 'Latitude'), crs=4326)
+    xs <- sapply(gps$geometry, function(x) x[1])
+    maxix <- which.max(xs)
+    center <- gps$geometry[[maxix]][c(1,2)]
+    center
+    gps$geometry[[1]][1]
+    gps$angles <- sapply(gps$geometry, function(x) {
+        angle <- (180*atan(c(center[2]-x[2])/c(center[1]-x[1]))/pi) %% 360
+        if(is.na(angle)) return(0)
+        angle
+    })
+    gps
+    gps <- arrange(gps, angles)
+    poly <- gps%>% 
+        mutate(geometry=st_combine(geometry)) %>% 
+        select(-angles) %>% 
+        slice(1) %>% 
+        st_cast('POLYGON')
+    fileEnd <- substr(filename, nchar(filename) - 3, nchar(filename))
+    if(fileEnd != '.kml') {
+        filename <- paste0(filename , '.kml')
+    }
+    st_write(poly, file.path(outDir, filename), append=FALSE, dataset_options=c('NameField=DriftName'))
+}
+
 plotSpeedSummary <- function(db, days=7, units=c('knots', 'kmh'), message=TRUE,
                              tz='UTC', gpsFormat=c('deciminute', 'decidegree', 'dms'), 
                              knotsLimit=4, filename=NULL) {
