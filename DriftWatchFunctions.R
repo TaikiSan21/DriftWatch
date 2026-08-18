@@ -2626,6 +2626,7 @@ gpsToKml <- function(gps, drift=NULL, filename=NULL, extraLocs=NULL,
         contour <- readRDS(contour)
         tracks <- rbind(tracks, contour)
     }
+    tracks <- st_zm(tracks)
     if(!is.null(filename)) {
         fileEnd <- substr(filename, nchar(filename) - 3, nchar(filename))
         if(fileEnd != '.kml') {
@@ -2829,8 +2830,42 @@ kmlCombiner <- function(files, names, outfile=NULL) {
         result[[i]] <- data[c('geometry', 'DriftName')]
     }
     result <- do.call(rbind, result)
+    result <- st_zm(result)
     if(!is.null(outfile)) {
-        saveRDS(result, file=outfile)
+        fileEnd <- substr(outfile, nchar(outfile) - 3, nchar(outfile))
+        switch(fileEnd,
+               '.kml' = {
+                   st_write(result, outfile, append=FALSE, dataset_options=c('NameField=DriftName'))
+                   if(!is.null(contour)) {
+                       textKml <- read_file(outfile)
+                       textKml <- gsub('<name>Contour_200</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                                       '<name>Contour_200</name>\n\t<Style><LineStyle><color>ffffaf7d',
+                                       textKml)
+                       textKml <- gsub('<name>Contour_2000</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                                       '<name>Contour_2000</name>\n\t<Style><LineStyle><color>fff58742',
+                                       textKml)
+                       textKml <- gsub('<name>Contour_4000</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                                       '<name>Contour_4000</name>\n\t<Style><LineStyle><color>ffff0000',
+                                       textKml)
+                       textKml <- gsub('<name>TargetGridcells</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                                       '<name>TargetGridcells</name>\n\t<Style><LineStyle><color>fff58742',
+                                       textKml)
+                       textKml <- gsub('<name>14nmiFrom200m</name>\n\t<Style><LineStyle><color>ff0000ff', 
+                                       '<name>14nmiFrom200m</name>\n\t<Style><LineStyle><color>ffff0000',
+                                       textKml)
+                       
+                       write_file(textKml, file=outfile)
+                   }
+               },
+               '.rds' = {
+                   saveRDS(result, file=outfile)
+               },
+               {
+                   message('No output file type specified, defaulting to .rds')
+                   outfile <- paste0(outfile, '.rds')
+                   saveRDS(result, outfile)
+               }
+        )
     }
     invisible(result)
 }
