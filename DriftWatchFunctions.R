@@ -282,13 +282,16 @@ getLockonDevices <- function(key=secrets$lockon_key) {
                   key)
     dev  <- httr::GET(url)
     dev_data <- rjson::fromJSON(rawToChar(dev$content))
-    devdf <- bind_rows(lapply(dev_data[[1]]$items, function(x) {
-        time <- x$device_data$time
-        result <- x[c('id', 'name')] #, 'time')]
-        result$time <- time
-        result$name <- gsub(' ', '', result$name)
-        result$DeviceName <- gsub('.*([0-9]{3}$)', 'SO-\\1', result$name)
-        result
+    devdf <- bind_rows(lapply(dev_data, function(d) {
+        lapply(d$items, function(x) {
+            # x <- x$items
+            time <- x$device_data$time
+            result <- x[c('id', 'name')] #, 'time')]
+            result$time <- time
+            result$name <- gsub(' ', '', result$name)
+            result$DeviceName <- gsub('.*([0-9]{3}$)', 'SO-\\1', result$name)
+            result
+        })
     }))
     devdf
 }
